@@ -82,11 +82,11 @@ Data dir from `dirs::data_dir()`; project folders default to `~/Synapse/<project
 | `citations` | message_id / artifact_id, source_id, quote |
 | `artifacts` | id, project_id, title, kind, current_version |
 | `artifact_versions` | artifact_id, version, body_md, changelog, created_by_run |
-| `notes` | id, owner (agent/project/user), body, created_at |
+| `memories` | id, scope (user/project/agent/digest), scope_id, kind, text, source_message_id, created_by, valid_from, invalid_at, confidence, pinned (see MEMORY.md) |
 | `mcp_servers` | id, name, transport (json), enabled, scope, tool_toggles (json) |
 | `schedules` | id, project_id, spec (cron-ish + tz), mode, prompt, enabled, last_run_at, next_run_at |
-| `fts_*` | FTS5 over messages, sources, artifacts, notes |
-| `vec_chunks` | sqlite-vec virtual table: chunk embeddings for sources/artifacts/notes |
+| `fts_*` | FTS5 over messages, sources, artifacts, memories |
+| `vec_chunks` | sqlite-vec virtual table: chunk embeddings for sources/artifacts/memories |
 | `catalog_cache` | etag, fetched_at, blob (gz) |
 
 Migrations: `rusqlite_migration`, versioned, run at startup. WAL mode. One writer task; readers use a

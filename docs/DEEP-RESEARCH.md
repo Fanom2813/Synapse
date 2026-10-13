@@ -60,8 +60,10 @@ Rules (enforced by the bridge, not left to prompts):
 - **Human pace**: one search per 3–8 s per engine (jittered), max 2 agent tabs at once, daily soft cap
   shown in Settings. Automated querying can trigger CAPTCHAs or temporary blocks and may conflict with a
   search engine's terms; the setting explains this. So "free" means no API cost, not unlimited.
-- CAPTCHA, login wall, 2FA → pause that sub-task, OS notification "Mira needs you in the browser", user
-  solves it, presses Continue (the "take over / return control" flow from dots/Grok Bot, using the real browser window).
+- CAPTCHA, login wall, 2FA → keep it simple: pause only that sub-task (other agents keep working), bring
+  the tab to the front, send one OS notification "Please clear the CAPTCHA in your browser" (click = focus
+  the tab). Synapse detects when it is cleared (CDP navigation/DOM events, no polling) and resumes on its own;
+  no extra button. If it is not cleared within 10 min, the sub-task switches to the next search backend.
 - Domain rules: default block list (banking, password managers, email send pages, payments); typing into
   forms and clicking submit buttons always **ask**; agents never read or type passwords.
 - Page content read from the browser is untrusted data (prompt-injection guard as in ARCHITECTURE.md §6).

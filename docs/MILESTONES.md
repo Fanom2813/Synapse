@@ -109,7 +109,7 @@ accept: `cargo test -p synapse-acceptance --test m05_deep_research`
 6a. **Browser bridge (user's browser).** `BrowserBridge` trait; backend A (chromiumoxide autoConnect to the
    user's Chrome) and backend B (chrome-devtools-mcp / Playwright MCP Bridge as connectors); `browser:*`
    search providers and `browser_*` tools; Synapse window/tab group only, human-pace limits, CAPTCHA/login
-   hand-off with notification + Continue, domain block list, form actions always ask; Settings → Browser setup
+   hand-off (notify user, auto-resume when cleared, fall back after 10 min), domain block list, form actions always ask; Settings → Browser setup
    guide. Tests use a fake CDP endpoint. verify: `cargo test -p synapse-research browser`
 6. **Sources panel.** List, dedupe, which agent used each, preview, open in browser, citation hover popovers. verify: `cargo test -p synapse-app sources_panel`
 

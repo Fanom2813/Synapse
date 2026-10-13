@@ -25,7 +25,8 @@ accept: `cargo test -p synapse-acceptance --test m01_foundation`
    `[workspace.dependencies]` from STACK.md, release profile from PERFORMANCE.md, `rust-toolchain.toml`,
    GitHub Actions matrix (macOS, Windows, Ubuntu) running the full check. verify: `cargo build --workspace && cargo test --workspace`
 2. **App shell window.** `synapse` binary opens a GPUI Kit window with sidebar / main / right-panel dock
-   layout (empty states), title bar, theme (system/light/dark) switch persisted; fonts (UI.md §6, subset script) and Phosphor icons
+   layout (empty states), custom title bar per UI.md §1b (native window controls per OS, drag/zoom, sidebar and
+   panel toggles, command palette button; other slots as placeholders), motion tokens module (UI.md §5), theme (system/light/dark) switch persisted; fonts (UI.md §6, subset script) and Phosphor icons
    (UI.md §7, sync script, GPUI Kit icon override) wired in. verify: `cargo test -p synapse-app shell`
 3. **Tokio bridge.** Copy Zed's gpui_tokio pattern (license header kept): 2-thread runtime, spawn returning
    GPUI tasks, cancellation on drop; a demo command fetches a URL via reqwest without blocking UI. verify: `cargo test -p synapse-app tokio_bridge`
@@ -98,6 +99,8 @@ accept: `cargo test -p synapse-acceptance --test m04_team_room`
    safe-point inbox checks, steering and interrupts (§3b), prompt layout for caching (§3c). verify: `cargo test -p synapse-core worker`
 4. **Orchestrator + run state machine.** Phases and mode presets (§4), speaker selection (§5), limits and
    budgets (§6), convergence, pause/resume/stop, interrupted-run resume. verify: `cargo test -p synapse-core orchestrator`
+4b. **Title bar live status.** Project switcher, run pill with live avatars and phase/progress line, run
+   popover controls, approvals inbox with inline approve/deny, budget meter, overflow on narrow windows (UI.md §1b). verify: `cargo test -p synapse-app title_bar`
 5. **Team room view.** Typed message styles (UI.md §3), threads, live avatars and states in header, three-layer
    detail toggle, @mentions and interjection, run controls, budget meter. verify: `cargo test -p synapse-app team_room`
 5b. **Attachments.** Content store with hash de-dup, `attach` / `read_attachment` tools, per-recipient
@@ -196,9 +199,13 @@ Goal: a first-time user is onboarded in under 2 minutes, results export, install
 platforms, and the performance budgets hold.
 accept: `cargo test -p synapse-acceptance --test m10_release`
 
-1. **Onboarding flow.** UI.md §2.1, skippable/resumable, ends with the lead introducing itself. verify: `cargo test -p synapse-app onboarding`
+1. **Onboarding flow.** UI.md §9: seven steps, background detection of CLIs/local models/keys, live key test,
+   "try free" path, team template, first project with the onboarding-to-main-window morph and lead introduction;
+   skippable, resumable, keyboard-first; acceptance asserts no step waits on network. verify: `cargo test -p synapse-app onboarding`
 2. **Export.** Artifacts and transcripts to Markdown/HTML, PDF via print; open project folder. verify: `cargo test -p synapse-core export`
 3. **Packaging + updates.** cargo-packager configs (dmg/app, msi/nsis, AppImage/deb), icons, updater against GitHub Releases, release workflow on tag. verify: `cargo packager --help >/dev/null && cargo test -p synapse-app updater`
+3b. **Motion polish pass.** Walk the micro-interaction list in UI.md §5 and make every item match the motion
+   tokens (one consistent feel), add any missing ones, verify reduce-motion and that idle returns to zero frames. verify: `cargo test -p synapse-app motion`
 4. **Performance pass.** `--perf-probe run5|scroll`, compare `fast` feature, fix regressions until PERFORMANCE.md §1 holds; record results in `docs/PERF-RESULTS.md`. verify: `cargo test -p synapse-acceptance --release --test m10_performance -- --include-ignored`
 5. **User docs.** README quick start, screenshots, provider/CLI/MCP how-tos in `docs/user/`. verify: `test -f docs/user/getting-started.md`
 

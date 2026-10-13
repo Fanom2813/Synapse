@@ -24,11 +24,42 @@ Built with GPUI Kit components. Before building any widget, check GPUI Kit's com
 GPUI Kit dock + resizable panels; panel sizes and open tabs persist per project. Command palette
 (Cmd/Ctrl-K) for every action. Keyboard: Cmd/Ctrl-N new project, Cmd/Ctrl-Enter send, Esc stop, Cmd/Ctrl-1..5 panel tabs.
 
+## 1b. Window frame and title bar
+
+The window draws its own frame (GPUI Kit `TitleBar`, client-side decorations): no plain OS title bar. The
+top strip is 40 px, draggable everywhere except on controls, double-click zooms/maximises (platform default).
+Native window controls stay native: macOS traffic lights inset on the left; Windows minimise/maximise/close
+on the right with Snap Layouts hover; Linux uses GPUI Kit's client-side buttons (follow GPUI Kit's docs for
+each platform).
+
+```
+┌─[● ● ●]─[≡]─[ Market study ▾ ]────[ ◐ Research · 2/5 · ●●●○○ ]────[ 🔍 ⌘K ]─[ 🔔2 ]─[ $0.42 ]─[ ◧ ]──┐
+   traffic  side  project switcher     run pill (phase, progress,     command   approvals  budget  panel
+   lights   bar                        live agent avatars)            palette   inbox      meter   toggle
+```
+
+Left → right (macOS order; Windows/Linux mirror the window buttons only):
+1. **Sidebar toggle** (Phosphor `sidebar`; Cmd/Ctrl-B).
+2. **Project switcher**: current project name + chevron; click opens a searchable popover of projects
+   (recent first, "New project" at the bottom, Cmd/Ctrl-N). The title cross-fades when switching.
+3. **Run pill** (centre, the heart of the frame): mode icon + current phase + progress, and a stack of the
+   **live avatars** of agents working now (max 5, then +N); each avatar shows its state (§4) at 16 px. Click
+   = run popover: phase timeline, pause/resume/stop, budget, open Activity. Idle state: "Start a run" with the
+   mode picker. While running, a 2 px progress line runs along the bottom edge of the title bar.
+4. **Command palette** button showing the shortcut (⌘K / Ctrl-K).
+5. **Approvals inbox** (bell with count badge): pending approvals and agents asking for the user
+   ("needs you"); click = popover list with approve/deny inline. The badge bounces once when a new one arrives.
+6. **Budget meter**: spent / budget for the current run as a tiny ring + amount; turns amber at 80 %, red at 100 %.
+7. **Right panel toggle** (Cmd/Ctrl-Alt-B).
+8. Overflow (narrow windows): items 6 and 4 collapse first into a "⋯" menu; the run pill shrinks to icon + avatars.
+
+Background indicators also appear here when relevant, small and quiet: browser bridge connected (globe),
+offline (cloud-slash), catalog/update available (dot on the overflow menu). The window frame itself does not
+glow or pulse; status lives in the run pill.
+
 ## 2. Screens
 
-1. **Onboarding** (first launch): welcome → name your lead agent → choose its look (avatar editor) →
-   add a provider (catalog picker + key, or detect local models/CLIs) → choose a team template → the
-   lead introduces itself in the first project. Skippable; resumable.
+1. **Onboarding** (first launch): see §9.
 2. **Project** (above). Empty state: goal input + template picker + example prompts.
 3. **Agent editor** (sheet): avatar editor, name, role, instructions (markdown editor), backend picker
    (provider/model or CLI), params, tools & MCP toggles, permission rules, notes, Activity tab.
@@ -113,17 +144,53 @@ Avatars render at sizes 16 / 24 / 40 / 96 / 160 px; below 24 px only colour + ey
 is on, and for idle avatars after 30 s (they settle to a still pose until something happens). This is
 required for the idle-CPU budget (PERFORMANCE.md).
 
-## 5. Micro-interactions
+## 5. Motion system and micro-interactions
 
-- Send button morphs into a stop square while the team is running; the draft is kept on stop.
-- Messages slide/fade in (≤ 150 ms); delegate cards expand into sub-threads.
-- Approval cards slide up and pause the stream visually (stream behind is dimmed).
-- Citation chips pop on hover with a source preview popover.
-- Team header avatars hop slightly when their agent starts speaking.
-- Typing shimmer (GPUI Kit skeleton/shimmer) only for the agents actually generating.
-- Toasts for background events when the window is focused; OS notifications when it is not.
-- Map view: edges animate briefly when a new Ask/Delegate is sent.
-All durations ≤ 250 ms except ambient avatar float; everything honours "reduce motion".
+Goal: everything feels smooth and alive, never slow and never busy. Use GPUI's `with_animation` and GPUI
+Kit's animation helpers (springs, keyframes, stagger); read their docs for the pinned version first.
+
+**Tokens** (one module, `synapse-app::theme::motion`; never inline numbers):
+
+| Token | Value | Use |
+|---|---|---|
+| `instant` | 80 ms, ease-out | hover/press colour, focus ring |
+| `quick` | 140 ms, ease-out | tooltips, chips, toggles, icon weight swap |
+| `standard` | 200 ms, ease-in-out | popovers, menus, message enter, panel content swap |
+| `emphasized` | 280 ms, ease-out-back (slight overshoot) | approval cards, onboarding steps, delegate expand |
+| `spring.soft` | stiffness 170, damping 26 | avatars, drag/resize settle, list reflow |
+| `spring.bouncy` | stiffness 260, damping 18 | send→stop morph, badge bounce, avatar hop |
+| `stagger` | 30 ms per item, max 6 items | lists appearing, onboarding choices |
+
+**Principles**
+- Animate only position/translation, scale, opacity, colour and corner radius; never re-layout big trees per frame.
+- Animations are **interruptible**: a new state starts from the current value (springs), no jumps.
+- Enter = fade + 4–8 px rise; exit = faster fade (60 % of enter). Things move from where they come from
+  (a delegate card grows out of the message that created it; a popover scales from its trigger).
+- Respect frame time: 60 fps everywhere, 120 fps on ProMotion displays where GPUI supports it; nothing animates
+  off-screen or while the window is hidden; idle settles to zero frames (PERFORMANCE.md).
+- Reduce motion (OS setting or Settings → Appearance): replace movement with short cross-fades, stop ambient avatar motion.
+
+**Micro-interactions (complete list; each is a small task, keep them consistent)**
+- Buttons: hover tint (`instant`), press scale 0.97, release spring back; disabled fades to 50 %.
+- Send button morphs into a stop square while the team is running (`spring.bouncy`); the draft is kept on stop.
+- Composer grows smoothly with text (height spring); @mention and /skill menus pop from the caret.
+- Messages: enter with fade + rise; streaming text uses GPUI Kit's word fade-in; the author's avatar hops
+  once when it starts speaking; grouped consecutive messages merge without jump.
+- Typing shimmer (GPUI Kit shimmer) only for agents actually generating.
+- Delegate cards expand into sub-threads (`emphasized`); progress bars ease, never jump.
+- Approval cards slide up with slight overshoot and dim the stream behind them; approving collapses the card
+  into a small "✓ approved" chip.
+- Citation chips pop on hover with a source preview popover after 300 ms hover intent.
+- Steering: a short line animates from the steering agent's avatar to the target's in the team header.
+- Map view: edges draw in when an Ask/Delegate is sent, nodes ease with `spring.soft`.
+- Panels: resize with spring settle; open/close slides with content fading in after 50 ms.
+- Tabs and segmented controls: the selection indicator slides between items.
+- Title bar: run pill expands/contracts smoothly when phases change; progress line eases; badge bounce.
+- Lists (projects, agents, sources): stagger in on first show only; reorder with spring.
+- Toasts slide in from the bottom-right, auto-dismiss with a draining progress line; OS notifications when unfocused.
+- Success moments (run finished, agent created): the lead avatar does a small celebratory bounce + confetti of
+  3–5 tiny dots in the avatar's colour (≤ 600 ms, once, skipped with reduce motion).
+- Empty states: duotone Phosphor illustration + gentle avatar idle; one clear primary action.
 
 ## 6. Typography
 
@@ -178,3 +245,34 @@ Rules:
 
 System / Light / Dark from GPUI Kit's theme system; one accent colour setting; avatar colours stay
 the same in both themes. Fonts: system UI font + a monospace for code.
+
+## 9. Onboarding (first launch, under 2 minutes)
+
+A single window, full-bleed, no title-bar clutter (only window controls), one step at a time with a
+progress row of small dots at the top. Every step: one question, big friendly visuals, keyboard-first
+(Enter = continue, Esc = back), skippable, and **resumable** (state saved after each step). Transitions
+between steps slide horizontally with `emphasized` + stagger for the choices. Nothing blocks on the network:
+detection runs in the background from the first frame.
+
+1. **Hello** (3 s of delight): the default green bean dot floats in, blinks, waves; headline in Bricolage
+   Grotesque: "Meet your research team." One button: "Let's start". Small link: "I've used Synapse before → import".
+2. **Your lead**: name field (prefilled suggestion, e.g. "Dottie") with the avatar reacting as you type
+   (looks at the caret, nods on Enter).
+3. **Its look**: avatar editor carousel: shape, colour, eyes, accessory; "Surprise me" shuffles with a bounce.
+   Live preview large in the centre.
+4. **Brains** (how agents think), pre-filled from background detection, shown as cards that appear as they are found:
+   - "Found on this computer": Claude Code / Codex / Gemini CLI / OpenCode (logged in ✓), Ollama / LM Studio models.
+   - "Add an API key": provider picker (search the catalog) → key field → live "Testing…" → ✓ with the model list.
+   - "Try free, no keys": local model or logged-in CLI + keyless research (shows what is needed if nothing is found).
+   At least one must work to continue; otherwise the step explains the simplest option for this OS.
+5. **Research** (optional, collapsed by default): connect the user's browser (§DEEP-RESEARCH 2b), SearXNG URL,
+   or search keys. Default keyless search already works, so this is "Make research stronger (optional)".
+6. **Your team**: choose a template (Research squad, Product brainstorm, Investment analysis, Custom); the
+   team's avatars pop in one by one with names and roles; tap one to swap the persona.
+7. **First project**: goal input with 3 example chips ("Is there a market for X in Uganda?", ...). Press Start:
+   the window expands into the main layout (onboarding card morphs into the project view), the lead
+   **introduces itself and the team** in the room, then starts the run (or waits if the user prefers).
+   Optional: "Keep Synapse in the menu bar/tray" toggle and hotkey hint shown as a toast after the first run starts.
+
+Measure: time-to-first-run from launch ≤ 2 min for a user with one key or one logged-in CLI (acceptance test
+uses mocks and asserts the number of steps and that nothing waits on network).

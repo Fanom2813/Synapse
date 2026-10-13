@@ -1,0 +1,4 @@
+{
+  "planned": "2026-10-14T02:42:30+03:00",
+  "summary": "Synapse is specified as a local-first desktop app for teams of AI agents to chat, research, analyse, and produce cited artifacts. The repository contains the product and implementation plan, but no application code or Cargo workspace yet, so all ten existing milestones remain to be built."
+}

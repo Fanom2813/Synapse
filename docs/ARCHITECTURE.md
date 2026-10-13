@@ -127,7 +127,25 @@ On lag (`RecvError::Lagged`) the view reloads the visible window of messages fro
 
 ## 6. Security
 
-- API keys in the OS keychain (`keyring` or GPUI `write_credentials`); DB stores only a reference.
+- **Secret storage** (API keys, MCP OAuth tokens, search keys, the local MCP-server token), one module
+  `synapse-app::secrets` behind a `SecretStore` trait; nothing else touches secrets:
+  - Stored in the OS credential store: macOS Keychain, Windows Credential Manager, Linux Secret Service
+    (GNOME Keyring / KWallet) via `keyring` (or GPUI's `write_credentials`, whichever the pinned docs recommend).
+    One entry per secret, service name `ai.synapse.<kind>`, account = provider/connector id.
+  - The database, settings, exports, logs and crash reports hold **only a reference** (`key_ref`), never the value.
+  - Linux without a Secret Service (minimal WMs, some distros): fall back to a file in the data dir encrypted
+    with `chacha20poly1305`, key derived with `argon2` from a passphrase the user sets once; Settings shows a
+    clear warning and how to install a keyring. Never a plaintext fallback.
+  - In memory: values wrapped in `secrecy::SecretString` (zeroized on drop, `Debug` prints `[redacted]`),
+    read just before the request, not cached in long-lived structs.
+  - Each key is sent **only to its provider's own host** (base URL from the catalog or the user's custom
+    endpoint); a key is never attached to a request for another host, and never placed in prompts, tool args,
+    messages, MCP calls or CLI agent environments unless that CLI is the provider it belongs to.
+  - UI: keys shown masked (`sk-…a1b2`) with Replace / Remove / Test; never copied back out in full.
+  - Remove provider / reset app deletes its keychain entries. Export/backup never includes secrets.
+  - Redaction layer (tracing + tool-call args/results + error messages): replace every known secret value and
+    common key patterns with `[redacted:<name>]`.
+  - Logins that belong to other apps (CLI agents' own auth, browser passwords) are never read or stored by Synapse.
 - Redaction layer on `tracing` and on tool-call args/results (known key values + secret patterns).
 - File tools: canonicalise, must be inside the project folder (or extra allowed roots), symlink escapes rejected.
 - Shell tool: off by default; when on, runs under `nono` (Seatbelt / Landlock) with workspace-write,

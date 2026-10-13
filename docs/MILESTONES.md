@@ -47,8 +47,10 @@ accept: `cargo test -p synapse-acceptance --test m02_providers_chat`
    ETag into `catalog_cache`, typed lookup (providers, models, limits, cost, capabilities). verify: `cargo test -p synapse-llm catalog`
 2. **LlmClient over genai.** `ModelBackend` impl for API models: streaming text, tool calls, usage, errors
    mapped; custom OpenAI-compatible base URL; `MockLlm` scripted backend for tests. verify: `cargo test -p synapse-llm backend`
-3. **Keys + local detection.** Keys in OS keychain (reference in DB); detect Ollama (:11434) and LM Studio
-   (:1234) and list their models; "test connection". verify: `cargo test -p synapse-llm keys_local`
+3. **Secret store + local detection.** `SecretStore` per ARCHITECTURE.md §6 (OS keychain, encrypted-file
+   fallback on Linux without Secret Service, `SecretString`, per-host sending, masked UI, delete on remove,
+   redaction); tests prove no secret value reaches the DB, logs, exports or another host. Detect Ollama
+   (:11434) and LM Studio (:1234) and list their models; "test connection". verify: `cargo test -p synapse-llm keys_local`
 4. **Providers settings screen.** Searchable catalog list, enable provider, enter key, test, set default
    models per role (lead, member, selector). verify: `cargo test -p synapse-app settings_providers`
 5. **Chat view.** Message list (GPUI Kit scroller, virtualised), streaming markdown with word fade-in,

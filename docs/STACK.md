@@ -35,6 +35,7 @@ component list and examples, and on crates.io. Writing it ourselves is the last 
 | MCP | **`rmcp` 3.5.x** features `client`, `server`, `transport-child-process`, `transport-streamable-http-client-reqwest`, `auth` | Registry: `registry.modelcontextprotocol.io/v0.1/servers`. |
 | Orchestration | **Own code** in `synapse-core` (~1–2k lines) on tokio channels | Patterns: Anthropic multi-agent research system, AutoGen SelectorGroupChat, STORM/Co-STORM, multi-agent debate. See TEAM-PROTOCOL.md. |
 | Deep research | Port **dzhng/deep-research** (MIT) loop + **STORM** perspectives | See DEEP-RESEARCH.md. |
+| Search providers + fusion | Port from **paperfoot/search-cli** (crate `agent-search` 0.9, MIT): its 13 provider adapters (Brave, Serper, Exa, Linkup, Jina, Firecrawl, Tavily, SerpApi, Perplexity, Parallel, xAI, ...) and reciprocal-rank-fusion merge | It is bin-only (no lib target), so copy the modules with the MIT notice; don't depend on it. If the `search` binary (search-cli) or `ketch` (Go, MIT) is on PATH, also offer it as an external provider via its JSON output. |
 | HTML → markdown | `dom_smoothie` 0.18 (Readability port, MIT) → `htmd` 0.5 (Apache-2.0) | Never `html2md` (GPL). Fallback: Jina Reader `r.jina.ai` (keyless, 20 RPM). |
 | PDF text | `pdf-extract` | Or Jina Reader. |
 | robots / rate limit | `texting_robots`, `governor` 0.10 | Per-host limiter. |
@@ -52,6 +53,15 @@ component list and examples, and on crates.io. Writing it ourselves is the last 
 | Tokens | provider-reported usage first; `tiktoken-rs` / `bpe-openai` only for estimates | |
 | Schedules | `croner` (cron parsing) + own scheduler task (sleeps until next due, no polling) | |
 | Packaging/update | `cargo-packager` + `cargo-packager-updater` | .app/.dmg, .msi/NSIS, AppImage/.deb. |
+
+## Reference code to port from (not dependencies)
+
+| Project | License | Port |
+|---|---|---|
+| **thClaws/thClaws** (Rust agent harness, wry/tao GUI) | MIT OR Apache-2.0 | Shell confinement (Seatbelt / Landlock / bubblewrap fallback) if `nono` falls short; provider adapters; MCP wiring; multi-agent supervision ideas. Not a base to fork: different UI stack and product. |
+| **zed-industries/zed** `gpui_tokio`, ACP client code | Apache-2.0 parts only (Zed is mostly GPL: never copy GPL crates) | tokio bridge; how Zed spawns ACP agents |
+| **paperfoot/search-cli** | MIT | search providers, RRF |
+| **dzhng/deep-research**, **stanford-oval/storm** | MIT | research loop, perspectives |
 
 ## Dev / test
 

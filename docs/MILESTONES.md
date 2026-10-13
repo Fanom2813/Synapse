@@ -94,7 +94,8 @@ Goal: Deep research mode searches, reads and follows leads, returns cited findin
 into a sourced report.
 accept: `cargo test -p synapse-acceptance --test m05_deep_research`
 
-1. **Search providers.** Trait + native-provider search, SearXNG, Brave, Tavily, Exa, Jina, DDG Lite
+1. **Search providers.** Trait + native-provider search, SearXNG, keyed APIs ported from paperfoot/search-cli
+   (MIT) with reciprocal-rank fusion, external `search`/`ketch` binaries when installed, DDG Lite
    fallback; settings section; setup card when none configured. verify: `cargo test -p synapse-research search`
 2. **Reader + cache.** Fetch, robots, rate limits, readability → markdown, PDF, Jina fallback, source cache,
    chunking. verify: `cargo test -p synapse-research reader`

@@ -10,7 +10,11 @@ planner/curation ideas from **GPT-Researcher** (Apache-2.0). Keep their license 
 1. **Provider-native web search** when the agent's model supports it (Anthropic web_search/web_fetch,
    OpenAI Responses web_search, Gemini grounding; exposed by genai). Free with the user's key.
 2. **SearXNG** URL set by the user (JSON format must be enabled on that instance).
-3. **Brave / Tavily / Exa / Jina Search** if the user added a key.
+3. **Keyed APIs** the user added (Brave, Serper, Exa, Linkup, Jina, Firecrawl, Tavily, SerpApi, Perplexity,
+   Parallel, xAI for X posts), adapters ported from paperfoot/search-cli (MIT). When several are
+   configured, fan out in parallel and merge with **reciprocal rank fusion** (a URL returned by several
+   engines outranks any single engine's top hit), as search-cli does.
+   Installed CLIs: if `search` (search-cli) or `ketch` is on PATH, offer it as a provider (JSON output).
 4. Best-effort fallback: DuckDuckGo Lite scrape (often bot-walled; never the only option advertised).
 
 If none is configured, the first research run shows a setup card explaining the options (with a

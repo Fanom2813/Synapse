@@ -74,6 +74,28 @@ Customisation (stored as JSON on the agent):
 
 Default lead = green bean with two diamond eyes. New agents get a deterministic look from their name.
 
+### Free avatar packs (alternatives to the blob, chosen per agent)
+
+Besides our own blob, users can pick a ready-made style. All are free; licenses checked 2026-10-14 on
+dicebear.com/licenses:
+
+| Pack | License | Fit |
+|---|---|---|
+| **DiceBear** (dicebear/dicebear, MIT code): Notionists, Lorelei, Open Peeps, Thumbs, Shapes, Moods, Critters, Pixel Art, Pixelbot, Voxel Bot, Glass, Rings, Marbles, Planets, Clay, Blobs and 25 more | **CC0** (no attribution) | Default alternatives: people-like (Notionists, Lorelei, Open Peeps), bots (Pixelbot, Voxel Bot), abstract (Shapes, Marbles, Blobs) |
+| DiceBear Bottts, Avataaars | Pablo Stanley's free license (personal + commercial) | Robot and cartoon-person agents |
+| DiceBear Fun Emoji, Adventurer, Big Smile, Croodles, Micah, Personas, Toon Head, ... | **CC BY 4.0** (attribution needed) | Allowed; credited in About → Credits and in `assets/avatars/CREDITS.md` |
+| microsoft/fluentui-emoji 3D | MIT | Role badges and accessories (🔬 researcher, ⚖️ critic, ✍️ writer) on top of any avatar |
+| Google Noto animated emoji (googlefonts.github.io/noto-emoji-animation) | CC BY 4.0 (re-check before bundling) | Animated status reactions (thinking, celebrating), **only if** GPUI's `img` plays animated WebP/GIF in our pinned version; otherwise use the static frame |
+
+How: DiceBear generates SVGs deterministically from a seed + options. A dev-only script
+(`scripts/gen-avatars`, uses the DiceBear CLI via npx at build time, never at runtime) pre-renders a palette
+of variants per style into `assets/avatars/<style>/` (SVG, small), plus a JSON manifest with license and
+author. At runtime GPUI renders them as full-colour images (`img` with SVG source, not the monochrome
+`svg()` element). They get the same state animations as the blob (float, bounce, squash, dim, badges),
+applied to the whole image; only our procedural blob has blinking eyes. Rejected: Multiavatar (custom
+license, unmaintained), Lottie/Rive packs (no GPUI player; velato/rive-rs need a vello renderer), anything
+without a clear license.
+
 States and animations (all via GPUI `with_animation` + GPUI Kit springs):
 
 | State | Motion |

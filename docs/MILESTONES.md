@@ -64,6 +64,8 @@ accept: `cargo test -p synapse-acceptance --test m03_agents`
 2. **Agent editor sheet.** All fields from UI.md §2.3 with validation. verify: `cargo test -p synapse-app agent_editor`
 3. **Avatar renderer.** Canvas blob with shapes, palettes, eyes, mouth, accessories (UI.md §4), sizes,
    deterministic default from name. verify: `cargo test -p synapse-app avatar_render`
+4a. **Avatar packs.** `scripts/gen-avatars` pre-renders DiceBear CC0/free styles + Fluent role badges into
+   `assets/avatars/` with a license manifest and CREDITS.md (UI.md §4); picker tab in the avatar editor. verify: `cargo test -p synapse-app avatar_packs`
 4. **Avatar states + editor.** State animations (idle/thinking/speaking/working/needs-you/paused/error),
    settle after 30 s, stop when hidden or reduce-motion; editor with live preview and "surprise me". verify: `cargo test -p synapse-app avatar_states`
 5. **Persona parsing.** Markdown + YAML frontmatter (agency-agents, wshobson, VoltAgent, 0xfurai, lst97 formats),

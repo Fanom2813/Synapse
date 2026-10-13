@@ -35,8 +35,10 @@ accept: `cargo test -p synapse-acceptance --test m01_foundation`
 6. **Tray, hide-on-close, single instance.** `QuitMode::Explicit`; close hides window, window destroyed after
    60 s hidden and rebuilt on open; gpui-tray menu (Open, Quit); `interprocess` single instance (second
    launch focuses the first). verify: `cargo test -p synapse-app lifecycle`
-7. **Perf probe.** `--perf-probe idle|tray --seconds N` printing JSON (CPU, RSS, footprint); a test that the
-   idle window does not request frames when nothing animates. verify: `cargo test -p synapse-app perf_probe`
+7. **Perf probe + size/perf CI gates.** `--perf-probe idle|tray --seconds N` printing JSON (CPU, RSS, footprint);
+   a test that the idle window does not request frames when nothing animates; CI job (macOS) that builds
+   release, checks binary size, `cargo bloat --crates` report, `cargo tree -d` duplicate check, and runs the
+   idle/tray probes against the hard caps in PERFORMANCE.md §1. verify: `cargo test -p synapse-app perf_probe`
 
 ## M2 — Providers and a single agent chat
 Goal: the user adds any provider from the models.dev catalog (or a local server), stores the key in the

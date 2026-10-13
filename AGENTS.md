@@ -55,6 +55,9 @@ Read first: `docs/PRD.md` (what), `docs/ARCHITECTURE.md` (where), `docs/STACK.md
 - Lazy-load heavy things (embeddings model, tree-sitter grammars, MCP servers, CLI agents, browser bridge)
   and drop them when idle. Kill child processes after idle timeout.
 - The UI thread never blocks: network, disk and child processes go through the tokio bridge.
+- Size: no new dependency without checking what it pulls in (`cargo tree -e normal -i <crate>`); prefer std or
+  an existing dependency for small things; `default-features = false`; no bundled fonts/binaries/large assets
+  (PERFORMANCE.md §1b). Mention binary size change in the summary when adding a dependency.
 - When a change touches a hot path (streaming, list rendering, bus, store queries), run the relevant
   `--perf-probe` scenario and mention the numbers in the summary.
 

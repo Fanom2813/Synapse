@@ -1,0 +1,109 @@
+# Synapse: UI, avatars and motion
+
+Built with GPUI Kit components. Before building any widget, check GPUI Kit's component list and
+`examples/` (chat, stream-markdown, dock, settings, sidebar, command palette, notifications, charts).
+
+## 1. Main window layout (Grok Bot style)
+
+```
+┌──────────┬───────────────────────────────────────────┬───────────────────┐
+│ Sidebar  │  Header: project name · run mode · status │  Right panel      │
+│          │  avatars of team (live state) · budget    │  (tabs, resizable)│
+│ Projects │───────────────────────────────────────────│  - Team (members, │
+│  ▸ pinned│                                           │    add agent)     │
+│  ▸ all   │   Team room (virtualised message list)    │  - Sources        │
+│          │   - grouped by agent, threaded replies    │  - Artifact       │
+│ Agents   │   - typed message styles (§3)             │  - Activity       │
+│  roster  │   - inline tool/approval/source cards     │  - Map (graph)    │
+│          │                                           │  - Scheduled      │
+│ ──────── │───────────────────────────────────────────│                   │
+│ Settings │  Composer: @mention, mode picker, budget, │                   │
+│          │  send ⇄ stop morph, queued follow-ups     │                   │
+└──────────┴───────────────────────────────────────────┴───────────────────┘
+```
+GPUI Kit dock + resizable panels; panel sizes and open tabs persist per project. Command palette
+(Cmd/Ctrl-K) for every action. Keyboard: Cmd/Ctrl-N new project, Cmd/Ctrl-Enter send, Esc stop, Cmd/Ctrl-1..5 panel tabs.
+
+## 2. Screens
+
+1. **Onboarding** (first launch): welcome → name your lead agent → choose its look (avatar editor) →
+   add a provider (catalog picker + key, or detect local models/CLIs) → choose a team template → the
+   lead introduces itself in the first project. Skippable; resumable.
+2. **Project** (above). Empty state: goal input + template picker + example prompts.
+3. **Agent editor** (sheet): avatar editor, name, role, instructions (markdown editor), backend picker
+   (provider/model or CLI), params, tools & MCP toggles, permission rules, notes, Activity tab.
+4. **Persona library** (dialog): sources (collections), search, category filter, preview, import (one or many).
+5. **Settings** (page with sections): Providers (catalog list with search, key status, test), Models
+   (defaults per role: lead, member, selector, embeddings), CLI agents (detected, login state), Search
+   (SearXNG URL, keys), MCP servers (list, add, registry browser, per-tool toggles), Permissions (rules
+   table), Appearance (theme, density, font size, reduce motion), Background (keep running on close,
+   launch at login, hotkey, notifications), Data (folders, export, clear), About/updates.
+6. **Quick-ask window** (hotkey): one input, project selector, answer streams in a compact view; "Open in app".
+7. **Tray menu**: Open Synapse · Active runs (with phase) · Pending approvals (n) · Pause all · Quick ask · Quit.
+
+## 3. Message styles
+
+| Kind | Look |
+|---|---|
+| Say / Answer | bubble with avatar, name, role chip; markdown (streaming, word fade-in from GPUI Kit) |
+| Ask | bubble with "→ @Agent" header; answered state links to the answer |
+| Challenge | accent-bordered bubble quoting the challenged claim (click to jump) |
+| Agree | compact one-line chip under the claim ("✓ Ana agrees") |
+| Refuse | muted bubble with reason; shows lead's follow-up |
+| Delegate | task card: assignee avatar, deliverable, progress, budget, open sub-thread |
+| Finding | card with confidence meter and numbered citation chips (hover = source preview) |
+| Status | thin checkpoint line, collapsible group ("Mira read 12 sources · 3 contradictions") |
+| NeedUser / approval | prominent card: Approve once / Always allow / Deny, with diff or command preview |
+| Done / synthesis | artifact card: open, diff vs previous version, export |
+
+Three-layer detail toggle (from Muse): **Summary** (only findings/decisions), **Conversation** (default),
+**Raw** (tool calls, prompts' metadata, token usage).
+
+## 4. Avatars (the dots look)
+
+Every agent has a floating 2D "dot": a soft blob drawn with GPUI `canvas` + `PathBuilder` Bézier paths,
+gradient fill, subtle drop shadow; eyes and accessories are separate layers. No shaders, no images needed.
+
+Customisation (stored as JSON on the agent):
+- **shape**: bean (default), round, pear, cloud, star-ish, square-soft, drop, plus 4 animal-ish (cat, bird, bear, fish)
+- **colour**: 12 preset palettes (base + highlight gradient) + custom
+- **eyes**: diamond (default), dot, beady, sleepy, happy arcs, wide
+- **mouth**: none (default), smile, o
+- **accessories**: glasses, sunglasses, bow tie, beret, cap, headphones, crown, wreath (max 2)
+- **seed**: deterministic random generator for "surprise me"
+
+Default lead = green bean with two diamond eyes. New agents get a deterministic look from their name.
+
+States and animations (all via GPUI `with_animation` + GPUI Kit springs):
+
+| State | Motion |
+|---|---|
+| idle | slow float (±2 px, 4 s), blink every 3–7 s (random), squash on hover |
+| thinking | gentle wobble + eyes look up-left/right |
+| speaking/streaming | small bounce synced to delta arrival (debounced), mouth/eye pulse |
+| working (tools/research) | orbiting tiny dots around the blob |
+| needs-you | bounce + badge, colour pulse once per 2 s (stops after 10 s) |
+| paused | dimmed, eyes closed, no motion |
+| error | brief shake, red badge |
+
+Avatars render at sizes 16 / 24 / 40 / 96 / 160 px; below 24 px only colour + eyes, no animation.
+**Animations must stop** when the window is hidden, when the avatar is off-screen, when "reduce motion"
+is on, and for idle avatars after 30 s (they settle to a still pose until something happens). This is
+required for the idle-CPU budget (PERFORMANCE.md).
+
+## 5. Micro-interactions
+
+- Send button morphs into a stop square while the team is running; the draft is kept on stop.
+- Messages slide/fade in (≤ 150 ms); delegate cards expand into sub-threads.
+- Approval cards slide up and pause the stream visually (stream behind is dimmed).
+- Citation chips pop on hover with a source preview popover.
+- Team header avatars hop slightly when their agent starts speaking.
+- Typing shimmer (GPUI Kit skeleton/shimmer) only for the agents actually generating.
+- Toasts for background events when the window is focused; OS notifications when it is not.
+- Map view: edges animate briefly when a new Ask/Delegate is sent.
+All durations ≤ 250 ms except ambient avatar float; everything honours "reduce motion".
+
+## 6. Themes
+
+System / Light / Dark from GPUI Kit's theme system; one accent colour setting; avatar colours stay
+the same in both themes. Fonts: system UI font + a monospace for code.

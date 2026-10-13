@@ -1,0 +1,8 @@
+/target
+**/*.rs.bk
+.DS_Store
+.env*
+.sg/env
+.sg/*.log
+/dist
+/.claude/

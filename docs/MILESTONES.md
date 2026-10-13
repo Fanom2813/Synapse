@@ -75,6 +75,11 @@ accept: `cargo test -p synapse-acceptance --test m03_agents`
    curated offline starter set in `assets/personas/`. verify: `cargo test -p synapse-personas parse`
 6. **Persona library.** Sources from PRD.md §5.2 fetched as GitHub tarballs (cached), search, category filter,
    preview, import one/many; license badge, unlicensed sources link-only; import from URL or local file. verify: `cargo test -p synapse-app persona_library`
+6b. **Skills runtime + library.** Skill folders (agentskills.io format) at global/project/agent scope;
+   `load_skill` / `read_skill_file` tools with progressive disclosure; scripts only via the shell tool and
+   permissions; Skill library screen (search, preview, enable per agent, update, delete); import from GitHub
+   collections, URL/zip/folder and existing local skill folders (`~/.claude/skills`, `~/.codex/skills`,
+   `.agents/skills`, opt-in); `/skill-name` slash menu in the composer; built-in starter skills. verify: `cargo test -p synapse-core skills && cargo test -p synapse-app skill_library`
 7. **Projects + team templates.** Create project (name, goal, folder), choose template (Research squad,
    Product brainstorm, Investment analysis, Custom), lead agent, add/remove members. verify: `cargo test -p synapse-core projects`
 
@@ -151,6 +156,8 @@ accept: `cargo test -p synapse-acceptance --test m08_memory`
 
 1. **Notes + memory tools.** Per-agent notes, project memory, user profile page; `remember`/`recall` tools. verify: `cargo test -p synapse-core memory`
 2. **Semantic index.** model2vec-rs lazy load, chunk embeddings into sqlite-vec, hybrid FTS5 + vector retrieval used in context building. verify: `cargo test -p synapse-store vector`
+2b. **Skill creator + learned skills.** Built-in `skill-creator` skill and editor with preview; after a run the
+   lead may propose "save as skill"; user reviews/approves; saved as a normal skill folder. verify: `cargo test -p synapse-core learned_skills`
 3. **Global search.** Command-palette search over messages, sources, artifacts, notes with jump-to. verify: `cargo test -p synapse-app global_search`
 
 ## M9 — Background, notifications, schedules, quick ask

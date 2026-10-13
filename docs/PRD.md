@@ -83,7 +83,25 @@ Single user on their own computer (macOS, Windows, Linux).
   Each imported persona records repo, commit sha and license. A curated **starter set** (~25 personas picked
   from agency-agents + Fabric frameworks + Synapse's own Lead/Critic/Fact-checker/Writer) ships in `assets/`
   so templates work offline.
-- **Agent Skills** (`SKILL.md` folders): attach skills to agents; loaded on demand.
+- **Skills** (open Agent Skills format, agentskills.io: a folder with `SKILL.md` + optional `scripts/`,
+  `references/`, `assets/`; the same format Claude Code, Codex, OpenCode, Gemini CLI and Cursor read):
+  - **Progressive disclosure**: only each skill's name + description sit in the agent's prompt; the agent
+    calls `load_skill(name)` to read the full SKILL.md, then `read_skill_file` for references when needed.
+    Scripts in a skill run only through the shell tool and its permission rules (ask by default).
+  - **Where skills come from**: built-in starter skills (research methods, report writing, citation style,
+    Fabric analysis patterns); import from GitHub collections (anthropics/skills, K-Dense scientific skills,
+    wshobson/agents skills, others with a clear license) and from skill directories (e.g. skills.sh, ClawHub;
+    verify they still exist and their licenses at build time); from a URL, zip or local folder; and
+    **existing skills already on the machine** (`~/.claude/skills`, `~/.codex/skills`, `.agents/skills`),
+    shown with their source and imported only when the user chooses.
+  - **Scopes**: global, per project, per agent. Toggle per agent. Skill library screen: search, preview,
+    enable, update from source, delete.
+  - **Use**: agents pick skills themselves by description; the user can force one with `/skill-name` in the
+    composer (slash menu lists enabled skills), as in OpenBot.
+  - **Create**: a built-in `skill-creator` skill helps the user (or an agent, with approval) write a new skill
+    in chat; editor with live preview; saved to the data dir as a normal skill folder (shareable).
+  - **Learned skills** (as dots / OpenDots "automatic learning"): after a run, the lead may propose "save this
+    as a skill" (e.g. a research procedure that worked); the user reviews and approves; never saved silently.
 - **Team templates**: e.g. "Research squad" (lead, 3 researchers, fact-checker, devil's advocate,
   writer), "Product brainstorm", "Investment analysis"; user can save their own.
 

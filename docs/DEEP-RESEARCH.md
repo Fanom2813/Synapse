@@ -41,6 +41,31 @@ limit, robots.txt via `texting_robots`, 15 s timeout, 5 MB cap) → content type
 - failure / JS-only page → Jina Reader `https://r.jina.ai/<url>` (keyless 20 RPM, key optional).
 Store markdown, title, hash; chunk (≈ 800 tokens) and embed lazily for retrieval.
 
+## 2b. Research in the user's browser (opt-in)
+
+Why: no per-query cost, real search engines (Google, Bing, Scholar, X, Reddit...) with the user's own
+session, pages behind the user's logins/subscriptions, JS-heavy pages. Implemented as a `SearchProvider`
+(`browser:google`, `browser:bing`, ...) plus `browser_*` tools (open, read page as markdown, click, type,
+scroll, screenshot), all through one `BrowserBridge` trait with three backends; Settings → Browser picks one
+and walks the user through setup:
+
+| Backend | How it attaches | Needs | Notes |
+|---|---|---|---|
+| **A. Chrome remote-debugging, native** (preferred) | Synapse connects over CDP with `chromiumoxide` to the user's running Chrome after the user enables it in `chrome://inspect/#remote-debugging`; Chrome shows its own permission dialog and an "automated" banner | Chrome ≥ 144 (verify exact version), no Node, no extension | Same mechanism as ChromeDevTools/chrome-devtools-mcp `--autoConnect` (Apache-2.0, 53k★): read its source for the discovery/handshake and port it to Rust. |
+| **B. Existing MCP servers** (zero code, works today) | Configure as a built-in MCP connector: `npx chrome-devtools-mcp --autoConnect`, or `npx @playwright/mcp --extension` with Microsoft's **Playwright MCP Bridge** extension (Chrome Web Store; tab picker, per-connection approval) | Node/npx | Fallback when A isn't available (e.g. Edge, older Chrome). Tools come through the normal MCP path and permission rules. |
+| **C. Synapse extension + native messaging** (later) | Own small MV3 extension talking to the Synapse binary via native messaging (the Claude in Chrome model); DOM extraction ideas from nanobrowser (Apache-2.0) | Extension install | Covers Chrome, Edge, Brave, Firefox without debugging flags. Tracked as a `later` issue. |
+
+Rules (enforced by the bridge, not left to prompts):
+- Opt-in per project; agents only use tabs **they opened** in the Synapse window/tab group, never the user's other tabs.
+- **Human pace**: one search per 3–8 s per engine (jittered), max 2 agent tabs at once, daily soft cap
+  shown in Settings. Automated querying can trigger CAPTCHAs or temporary blocks and may conflict with a
+  search engine's terms; the setting explains this. So "free" means no API cost, not unlimited.
+- CAPTCHA, login wall, 2FA → pause that sub-task, OS notification "Mira needs you in the browser", user
+  solves it, presses Continue (the "take over / return control" flow from dots/Grok Bot, using the real browser window).
+- Domain rules: default block list (banking, password managers, email send pages, payments); typing into
+  forms and clicking submit buttons always **ask**; agents never read or type passwords.
+- Page content read from the browser is untrusted data (prompt-injection guard as in ARCHITECTURE.md §6).
+
 ## 3. The loop (per research sub-task)
 
 ```

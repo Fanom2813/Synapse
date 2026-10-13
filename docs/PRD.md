@@ -99,7 +99,11 @@ Single user on their own computer (macOS, Windows, Linux).
 
 ### 5.4 Deep research
 See DEEP-RESEARCH.md. **Works with no keys at all**: keyless search chain + built-in page reading + a
-local model or a logged-in CLI agent. Search providers: provider-native web search when the model has it, SearXNG URL,
+local model or a logged-in CLI agent.
+**Research in the user's own browser** (opt-in): agents can drive the user's real, logged-in Chrome/Edge/Brave
+to search Google/Bing/any site with no API cost, read pages behind the user's logins and subscriptions,
+and handle JS-heavy sites. Runs in a dedicated "Synapse" window/tab group, at a human pace, and hands
+control to the user on CAPTCHAs or logins. See DEEP-RESEARCH.md §2b. Search providers: provider-native web search when the model has it, SearXNG URL,
 Brave / Tavily / Exa keys; page reading built in (readability → markdown) with Jina Reader fallback.
 Sources panel with dedupe, credibility notes, which agent used which source.
 

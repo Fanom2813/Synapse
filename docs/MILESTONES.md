@@ -106,6 +106,11 @@ accept: `cargo test -p synapse-acceptance --test m05_deep_research`
 3. **Research loop.** Breadth/depth loop (DEEP-RESEARCH.md §3), budget forcing, compressed findings with citations. verify: `cargo test -p synapse-research loop`
 4. **Perspectives + outline.** STORM-style perspectives mapped to members, Q&A with grounded expert, outline. verify: `cargo test -p synapse-research perspectives`
 5. **Critique, revise, fact-check.** Challenges linked to paragraphs, revision with changelog, quote check against sources. verify: `cargo test -p synapse-research factcheck`
+6a. **Browser bridge (user's browser).** `BrowserBridge` trait; backend A (chromiumoxide autoConnect to the
+   user's Chrome) and backend B (chrome-devtools-mcp / Playwright MCP Bridge as connectors); `browser:*`
+   search providers and `browser_*` tools; Synapse window/tab group only, human-pace limits, CAPTCHA/login
+   hand-off with notification + Continue, domain block list, form actions always ask; Settings → Browser setup
+   guide. Tests use a fake CDP endpoint. verify: `cargo test -p synapse-research browser`
 6. **Sources panel.** List, dedupe, which agent used each, preview, open in browser, citation hover popovers. verify: `cargo test -p synapse-app sources_panel`
 
 ## M6 — Tools, permissions and MCP
@@ -172,7 +177,7 @@ accept: `cargo test -p synapse-acceptance --test m10_release`
 ---
 
 ## Later (label `later`, built only with `sg run --quality`)
-Voice calls (realtime speech, captions, minimise to chat); live browser panel with take-over (chromiumoxide
-on the user's Chrome); chat channels while running (Telegram first); teach-by-demonstration routines;
+Voice calls (realtime speech, captions, minimise to chat); own browser extension + native messaging (backend C);
+in-app live view of the agent's browser tab; chat channels while running (Telegram first); teach-by-demonstration routines;
 Ideas surface (proactive suggestions while open); pages/spaces editor with slash commands; plugin/skill
 marketplace; i18n; accessibility audit.

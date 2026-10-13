@@ -39,7 +39,7 @@ component list and examples, and on crates.io. Writing it ourselves is the last 
 | HTML → markdown | `dom_smoothie` 0.18 (Readability port, MIT) → `htmd` 0.5 (Apache-2.0) | Never `html2md` (GPL). Fallback: Jina Reader `r.jina.ai` (keyless, 20 RPM). |
 | PDF text | `pdf-extract` | Or Jina Reader. |
 | robots / rate limit | `texting_robots`, `governor` 0.10 | Per-host limiter. |
-| Headless browser | none by default; `chromiumoxide` 0.9 opt-in later, driving the user's own Chrome | Never bundle Chromium. |
+| Browser control | `chromiumoxide` 0.9 attaching to the user's running Chrome (remote-debugging autoConnect, ported from ChromeDevTools/chrome-devtools-mcp, Apache-2.0); fallback connectors `chrome-devtools-mcp --autoConnect` and `@playwright/mcp --extension` (Apache-2.0) | Never bundle Chromium. See DEEP-RESEARCH.md §2b. |
 | Storage | `rusqlite =0.40.x` feature `bundled` (FTS5) + `rusqlite_migration` + `sqlite-vec` 0.1.9 | |
 | Embeddings | `model2vec-rs` 0.3 (static embeddings, no ONNX, tiny) | Lazy-loaded on first semantic search; model file downloaded once to the data dir. |
 | Personas | Markdown + YAML frontmatter via `gray_matter` or `serde_yaml_ng`; Fabric patterns (`system.md`, no frontmatter); Agent Skills (`SKILL.md`) | Sources and licenses: PRD.md §5.2. Import via GitHub tarball (`/tarball/{ref}`), not per-file requests (60 req/h unauthenticated). |

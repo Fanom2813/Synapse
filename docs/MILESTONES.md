@@ -91,11 +91,15 @@ accept: `cargo test -p synapse-acceptance --test m04_team_room`
 1. **Bus + envelopes.** Types from TEAM-PROTOCOL.md §2–3, persist-then-publish, lag resync. verify: `cargo test -p synapse-core bus`
 2. **Team tools.** say/ask_agent/answer/challenge/agree/refuse/delegate/report_finding/propose/vote/ask_user/done
    as tool definitions with schemars schemas → envelopes. verify: `cargo test -p synapse-core team_tools`
-3. **Agent worker + context builder.** Turn loop per agent, context per TEAM-PROTOCOL.md §7, rolling summary. verify: `cargo test -p synapse-core worker`
+3. **Agent worker + context builder.** Turn loop per agent, context per TEAM-PROTOCOL.md §7, rolling summary,
+   safe-point inbox checks, steering and interrupts (§3b), prompt layout for caching (§3c). verify: `cargo test -p synapse-core worker`
 4. **Orchestrator + run state machine.** Phases and mode presets (§4), speaker selection (§5), limits and
    budgets (§6), convergence, pause/resume/stop, interrupted-run resume. verify: `cargo test -p synapse-core orchestrator`
 5. **Team room view.** Typed message styles (UI.md §3), threads, live avatars and states in header, three-layer
    detail toggle, @mentions and interjection, run controls, budget meter. verify: `cargo test -p synapse-app team_room`
+5b. **Attachments.** Content store with hash de-dup, `attach` / `read_attachment` tools, per-recipient
+   delivery (vision vs caption, inline vs summary, ACP blocks), thumbnails/viewer/file chips, drag-and-drop
+   in the composer, limits (TEAM-PROTOCOL.md §3a). verify: `cargo test -p synapse-core attachments && cargo test -p synapse-app attachments_ui`
 6. **Conversation map.** Graph panel of agents and Ask/Delegate/Challenge edges, click edge → jump to message. verify: `cargo test -p synapse-app conversation_map`
 7. **Synthesis artifact.** Writer produces the artifact (versions, changelog, dissent, open questions); Artifact panel with diff between versions. verify: `cargo test -p synapse-core artifacts && cargo test -p synapse-app artifact_panel`
 

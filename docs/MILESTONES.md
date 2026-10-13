@@ -32,8 +32,9 @@ accept: `cargo test -p synapse-acceptance --test m01_foundation`
    GPUI tasks, cancellation on drop; a demo command fetches a URL via reqwest without blocking UI. verify: `cargo test -p synapse-app tokio_bridge`
 4. **Store.** `synapse-store` with rusqlite bundled, WAL, migrations for the full schema in
    ARCHITECTURE.md §3, single writer task, read pool, FTS5 tables; repo fns for projects/agents/messages. verify: `cargo test -p synapse-store`
-5. **Settings + data dirs + logging.** Settings table API, data/log dirs via `dirs`, tracing with rolling
-   file and the secret-redaction layer. verify: `cargo test -p synapse-app settings && cargo test -p synapse-core redact`
+5. **Settings + data dirs + logging + secret redactor.** Settings table API, data/log dirs via `dirs`, tracing with
+   rolling file; the secret redactor (ARCHITECTURE.md §6: known values + gitleaks rules + default deny paths),
+   on by default, wired into logging now and into every model-bound path as those paths are built. verify: `cargo test -p synapse-app settings && cargo test -p synapse-core redact`
 6. **Tray, hide-on-close, single instance.** `QuitMode::Explicit`; close hides window, window destroyed after
    60 s hidden and rebuilt on open; gpui-tray menu (Open, Quit); `interprocess` single instance (second
    launch focuses the first). verify: `cargo test -p synapse-app lifecycle`

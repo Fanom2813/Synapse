@@ -50,6 +50,7 @@ component list and examples, and on crates.io. Writing it ourselves is the last 
 | File watching | `notify` (debounced; only the project's `reports/` folder) | Picks up user edits to report files. |
 | Diffs | `similar` | For write/edit previews and artifact changelogs. |
 | Secrets | `keyring` 4.2 (or GPUI credentials API), `secrecy` | |
+| Secret redactor | gitleaks rules (MIT, `config/gitleaks.toml`, vendored + attributed) compiled with `regex`; `aho-corasick` for known values | ARCHITECTURE.md §6. |
 | Schemas | `schemars` 1.x, `serde`, `serde_json` | Tool parameter schemas. |
 | Config | `toml` + serde | (figment is stale.) |
 | Logging | `tracing`, `tracing-subscriber`, `tracing-appender` (rolling file) + redaction layer | |

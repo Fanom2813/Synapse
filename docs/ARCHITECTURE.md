@@ -160,8 +160,23 @@ On lag (`RecvError::Lagged`) the view reloads the visible window of messages fro
     messages, MCP calls or CLI agent environments unless that CLI is the provider it belongs to.
   - UI: keys shown masked (`sk-…a1b2`) with Replace / Remove / Test; never copied back out in full.
   - Remove provider / reset app deletes its keychain entries. Export/backup never includes secrets.
-  - Redaction layer (tracing + tool-call args/results + error messages): replace every known secret value and
-    common key patterns with `[redacted:<name>]`.
+  - **Secret redactor, on by default** (`synapse-core::redact`, one module used everywhere). It runs on
+    **everything that leaves the app for a model or gets stored**: file contents an agent reads, shell output,
+    MCP and CLI-agent results, fetched pages, browser page text, attachments' extracted text, pasted user text,
+    tool-call args/results, logs, the audit log, error messages, memory writes, exports.
+    - Layer 1, known values: every secret in the `SecretStore`, plus values from `.env*` files in allowed
+      folders and secret-named environment variables → `[redacted:<NAME>]` (exact match, Aho-Corasick).
+    - Layer 2, patterns: the rule set of **gitleaks** (MIT, `config/gitleaks.toml`, ~200 rules: cloud keys,
+      tokens, private keys, JWTs, connection strings...) compiled with the `regex` crate at startup, plus
+      entropy checks for generic `key=`/`token=` assignments → `[redacted:<rule-id>]`.
+    - Default deny rules: `.env*`, `*.pem`, `*.key`, `id_rsa*`, `~/.ssh`, `~/.aws`, keychains and browser profile
+      folders are not readable by agents at all (the user can override per path with a visible warning).
+    - The real value never reaches a model. Commands an agent runs still get the real environment (like sg),
+      so redaction does not break tools; only their output is scrubbed.
+    - When something is redacted, the message shows a small "1 secret hidden" chip; Settings → Privacy shows
+      counts and lets the user add custom patterns/values. It can be turned off per project only with a
+      confirmation, and never for logs.
+    - Tests: a fixture corpus of fake keys for each major provider must be fully redacted on every path above.
   - Logins that belong to other apps (CLI agents' own auth, browser passwords) are never read or stored by Synapse.
 - Redaction layer on `tracing` and on tool-call args/results (known key values + secret patterns).
 - File tools: canonicalise, must be inside the project folder (or extra allowed roots), symlink escapes rejected.

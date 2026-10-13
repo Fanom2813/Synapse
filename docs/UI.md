@@ -7,8 +7,9 @@ Built with GPUI Kit components. Before building any widget, check GPUI Kit's com
 
 ```
 ┌──────────┬───────────────────────────────────────────┬───────────────────┐
-│ Sidebar  │  Header: project name · run mode · status │  Right panel      │
-│          │  avatars of team (live state) · budget    │  (tabs, resizable)│
+│ Sidebar  │  Team strip: all members' avatars (state),│  Right panel      │
+│          │  @-click to address one (status/budget →  │  (tabs, resizable)│
+│          │  live in the title bar, §1b)              │                   │
 │ Projects │───────────────────────────────────────────│  - Team (members, │
 │  ▸ pinned│                                           │    add agent)     │
 │  ▸ all   │   Team room (virtualised message list)    │  - Sources        │

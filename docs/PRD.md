@@ -157,9 +157,7 @@ Sources panel with dedupe, credibility notes, which agent used which source.
 - CLI agents' own permission requests (ACP `session/request_permission`) use the same cards.
 
 ### 5.6 Memory
-- Per-agent private notes; per-project memory (facts, decisions); a "What Synapse knows about you" page.
-- Full-text + semantic search across messages, sources, artifacts (SQLite FTS5 + sqlite-vec with
-  small local static embeddings).
+See [MEMORY.md](MEMORY.md): what is remembered, who writes it, how it is recalled, and user control.
 
 ### 5.7 Background, tray and desktop integration
 - Closing the window hides it; agents keep working; Quit from tray or Cmd/Ctrl-Q stops everything.

@@ -151,14 +151,22 @@ accept: `cargo test -p synapse-acceptance --test m07_cli_agents`
 6. **CLI agents settings + picker.** Settings section and backend picker entries ("use Claude Code as agent"). verify: `cargo test -p synapse-app cli_agents_ui`
 
 ## M8 — Memory and search
-Goal: agents remember (notes, project memory) and everything is searchable.
+Goal: agents remember what matters across runs and projects (MEMORY.md), the user can see and control
+every memory, and everything is searchable.
 accept: `cargo test -p synapse-acceptance --test m08_memory`
 
-1. **Notes + memory tools.** Per-agent notes, project memory, user profile page; `remember`/`recall` tools. verify: `cargo test -p synapse-core memory`
-2. **Semantic index.** model2vec-rs lazy load, chunk embeddings into sqlite-vec, hybrid FTS5 + vector retrieval used in context building. verify: `cargo test -p synapse-store vector`
-2b. **Skill creator + learned skills.** Built-in `skill-creator` skill and editor with preview; after a run the
+1. **Memory store + scopes.** `memories` table, scopes (user/project/agent/digest), supersede via
+   `invalid_at`, markdown mirror files with edit-back parsing. verify: `cargo test -p synapse-store memories && cargo test -p synapse-core memory_files`
+2. **Semantic index.** model2vec-rs lazy load, embeddings into sqlite-vec, hybrid FTS5 + vector retrieval. verify: `cargo test -p synapse-store vector`
+3. **Writing memory.** `remember` tool, "Remember" action on messages, run digests, automatic extraction with
+   mem0-style ADD/UPDATE/DELETE/NOOP decisions, proposals for project/user scope, secret filter. verify: `cargo test -p synapse-core memory_write`
+4. **Recall in context.** Core block + retrieved block within the memory budget, `recall` / `search_archive`
+   tools, "used N memories" on messages. verify: `cargo test -p synapse-core memory_recall`
+5. **Memory screens.** Settings → Memory and Project → Memory: list, search, edit, pin, delete, provenance,
+   history, review queue, forget run/scope, pause per project. verify: `cargo test -p synapse-app memory_screens`
+6. **Skill creator + learned skills.** Built-in `skill-creator` skill and editor with preview; after a run the
    lead may propose "save as skill"; user reviews/approves; saved as a normal skill folder. verify: `cargo test -p synapse-core learned_skills`
-3. **Global search.** Command-palette search over messages, sources, artifacts, notes with jump-to. verify: `cargo test -p synapse-app global_search`
+7. **Global search.** Command-palette search over messages, sources, artifacts, memories with jump-to. verify: `cargo test -p synapse-app global_search`
 
 ## M9 — Background, notifications, schedules, quick ask
 Goal: Synapse works from the tray: runs continue with the window closed, notifications bring the user back,

@@ -30,6 +30,7 @@ Status: specification stage. The build is driven by the docs in [`docs/`](docs/)
 | [docs/STACK.md](docs/STACK.md) | Every library we glue together, pinned versions, why |
 | [docs/TEAM-PROTOCOL.md](docs/TEAM-PROTOCOL.md) | How agents talk to each other: message types, orchestration, limits |
 | [docs/DEEP-RESEARCH.md](docs/DEEP-RESEARCH.md) | Research engine: search, reading, loops, citations, revision |
+| [docs/MEMORY.md](docs/MEMORY.md) | What agents remember, how it is written, recalled and controlled |
 | [docs/UI.md](docs/UI.md) | Screens, avatar system, animations, interaction details |
 | [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | RAM/CPU budgets and the rules that keep us inside them |
 | [docs/MILESTONES.md](docs/MILESTONES.md) | Build order, tasks and acceptance tests |

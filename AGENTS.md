@@ -1,7 +1,7 @@
 # Rules for working on Synapse
 
 Read first: `docs/PRD.md` (what), `docs/ARCHITECTURE.md` (where), `docs/STACK.md` (with what),
-`docs/PERFORMANCE.md` (how light). Feature details: `docs/TEAM-PROTOCOL.md`, `docs/DEEP-RESEARCH.md`, `docs/UI.md`.
+`docs/PERFORMANCE.md` (how light). Feature details: `docs/TEAM-PROTOCOL.md`, `docs/DEEP-RESEARCH.md`, `docs/MEMORY.md`, `docs/UI.md`.
 
 ## 1. Read the library docs; never assume
 - Before using any library API, read its docs for **the exact version we pin**: docs.rs for that version,

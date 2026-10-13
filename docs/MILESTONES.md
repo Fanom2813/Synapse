@@ -118,6 +118,12 @@ accept: `cargo test -p synapse-acceptance --test m06_tools_mcp`
 5. **MCP client manager.** rmcp stdio + streamable HTTP + OAuth, lazy start, idle kill, tools exposed to
    agents with per-agent/per-tool toggles, read-only annotation auto-run. verify: `cargo test -p synapse-mcp client`
 6. **MCP settings + registry browser.** Add/edit servers, browse registry.modelcontextprotocol.io, install config, test. verify: `cargo test -p synapse-app mcp_settings`
+7. **Connectors gallery.** Curated `assets/connectors.json` (remote OAuth connectors, local connectors,
+   aggregators per PRD.md §5.5; each URL verified against the registry/vendor docs, unverifiable ones
+   dropped), one-click connect with OAuth, connector cards with read/write tools and per-agent access;
+   onboarding "connect apps" step uses it. Tests use a mock MCP server with a fake OAuth flow. verify: `cargo test -p synapse-app connectors`
+8. **Synapse as MCP server.** Opt-in rmcp server (stdio + localhost HTTP with token) exposing list_projects,
+   start_run, run_status, get_report, ask_agent; Settings shows config snippets for Claude Desktop, Cursor, Zed. verify: `cargo test -p synapse-mcp server`
 
 ## M7 — Installed CLI agents (Claude Code, Codex, OpenCode, Gemini, ...)
 Goal: agents can be backed by CLIs the user already has, driven over ACP, taking part in the team with the same tools and approvals.

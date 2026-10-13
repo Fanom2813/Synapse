@@ -108,6 +108,24 @@ Sources panel with dedupe, credibility notes, which agent used which source.
   run shell command (sandboxed, off by default), ask user, notes (memory), create artifact.
 - **MCP**: add servers (stdio command or HTTP URL, OAuth supported), browse the official MCP
   registry, per-agent enablement, per-tool toggles. Read-only tools (per annotations) may auto-run.
+- **Connectors gallery** (app integrations, the dots/Grok Bot "connect apps" step), all built on MCP so
+  there is no per-app code:
+  - **One-click remote connectors**: services that host an official MCP server with OAuth (candidates:
+    GitHub, Notion, Linear, Atlassian Jira/Confluence, Slack, Asana, Sentry, Stripe, Cloudflare, HubSpot,
+    Google Workspace/Drive/Gmail/Calendar where available). Click → OAuth in the browser → tokens in the
+    keychain → tools appear. The list is curated in `assets/connectors.json` and **every URL is verified
+    against the MCP registry / vendor docs when built**; entries that no longer exist are dropped.
+  - **Local connectors** (stdio, run on demand): filesystem folders, Obsidian/Markdown vault, SQLite/Postgres,
+    Git, browser (Playwright MCP, opt-in), Apple Notes/Calendar/Mail/Reminders on macOS, Office/Outlook on
+    Windows where a maintained MCP server exists.
+  - **Aggregators** for long-tail apps (thousands of apps behind one MCP endpoint): Composio, Zapier MCP,
+    Pipedream; user brings their own account/key.
+  - Each connector card: what it can read/write, which tools are read-only, which agents may use it,
+    connection status, disconnect. Write tools default to **ask**.
+- **Synapse as an MCP server** (other apps talk to the team): opt-in local server (stdio for Claude
+  Desktop/Cursor/Zed configs, and localhost streamable HTTP with a token) exposing `list_projects`,
+  `start_run(project, mode, prompt)`, `run_status`, `get_report`, `ask_agent`. Off by default; Settings shows
+  copy-paste config snippets for popular clients.
 - **Permission rules** (global → project → agent): `allow` / `ask` / `deny` per tool and pattern
   (path glob, command prefix, MCP tool name); deny wins. Plus natural-language rules checked by a
   small review model before risky actions (optional).

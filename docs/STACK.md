@@ -47,6 +47,7 @@ component list and examples, and on crates.io. Writing it ourselves is the last 
 | Personas | Markdown + YAML frontmatter via `gray_matter` or `serde_yaml_ng`; Fabric patterns (`system.md`, no frontmatter); Agent Skills (`SKILL.md`) | Sources and licenses: PRD.md §5.2. Import via GitHub tarball (`/tarball/{ref}`), not per-file requests (60 req/h unauthenticated). |
 | Permissions | own rules engine + `globset` | Copy Claude Code's allow/ask/deny semantics (deny > ask > allow). |
 | Shell sandbox | `nono` 0.80 (Seatbelt / Landlock) | Windows: no sandbox, always ask. |
+| File watching | `notify` (debounced; only the project's `reports/` folder) | Picks up user edits to report files. |
 | Diffs | `similar` | For write/edit previews and artifact changelogs. |
 | Secrets | `keyring` 4.2 (or GPUI credentials API), `secrecy` | |
 | Schemas | `schemars` 1.x, `serde`, `serde_json` | Tool parameter schemas. |

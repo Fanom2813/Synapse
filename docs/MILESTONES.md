@@ -107,7 +107,8 @@ accept: `cargo test -p synapse-acceptance --test m04_team_room`
    delivery (vision vs caption, inline vs summary, ACP blocks), thumbnails/viewer/file chips, drag-and-drop
    in the composer, limits (TEAM-PROTOCOL.md §3a). verify: `cargo test -p synapse-core attachments && cargo test -p synapse-app attachments_ui`
 6. **Conversation map.** Graph panel of agents and Ask/Delegate/Challenge edges, click edge → jump to message. verify: `cargo test -p synapse-app conversation_map`
-7. **Synthesis artifact.** Writer produces the artifact (versions, changelog, dissent, open questions); Artifact panel with diff between versions. verify: `cargo test -p synapse-core artifacts && cargo test -p synapse-app artifact_panel`
+7. **Synthesis artifact.** Writer produces the artifact (versions, changelog, dissent, open questions); Artifact panel with diff between versions;
+   markdown mirror in the project folder (`reports/`, history, optional transcripts) with atomic writes and edit-import (ARCHITECTURE.md §3). verify: `cargo test -p synapse-core artifacts && cargo test -p synapse-app artifact_panel`
 
 ## M5 — Deep research
 Goal: Deep research mode searches, reads and follows leads, returns cited findings, critiques and revises

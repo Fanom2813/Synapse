@@ -48,7 +48,8 @@ Single user on their own computer (macOS, Windows, Linux).
   budget (turns, tokens, USD, wall clock), live status, pause/resume/stop, and an activity log.
 - **Message**: every utterance between user and agents is typed (see TEAM-PROTOCOL.md) and persisted.
 - **Source**: a fetched web page / document with URL, title, extracted markdown, and who cited it.
-- **Artifact**: a markdown report or file produced by the team, versioned (revised analysis keeps diffs).
+- **Artifact**: a markdown report or file produced by the team, versioned (revised analysis keeps diffs), and
+  always mirrored as a `.md` file in the project folder (ARCHITECTURE.md §3).
 
 ## 5. Features (v1)
 

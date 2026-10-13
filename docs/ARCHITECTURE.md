@@ -89,6 +89,23 @@ Data dir from `dirs::data_dir()`; project folders default to `~/Synapse/<project
 | `vec_chunks` | sqlite-vec virtual table: chunk embeddings for sources/artifacts/memories |
 | `catalog_cache` | etag, fetched_at, blob (gz) |
 
+**Markdown files on disk** (the database is the source of truth; these are readable mirrors the user owns):
+
+```
+~/Synapse/<project-slug>/
+  reports/<artifact-slug>.md            current version of each artifact (frontmatter: title, version, run, date, sources)
+  reports/sources.md                    numbered source list shared by the reports
+  transcripts/<date>-<run-mode>.md      optional (Settings → Project → "save transcripts"), written when a run ends
+  files/                                files agents create with the file tools (permission rules apply)
+  .synapse/history/<artifact>/v<N>.md   older artifact versions + changelog
+  .synapse/MEMORY.md                    project memory mirror (MEMORY.md)
+  .synapse/blobs/<hash>                 attachments (TEAM-PROTOCOL.md §3a)
+```
+Written by one background writer after each artifact version / run end (atomic write: temp file + rename),
+never on every token. If the user edits a report file, Synapse detects it (file watcher on `reports/` only,
+`notify` crate, debounced) and offers to import the edit as a new version. Users can point the project folder
+at an existing folder (e.g. an Obsidian vault or a git repo).
+
 Migrations: `rusqlite_migration`, versioned, run at startup. WAL mode. One writer task; readers use a
 small pool of read connections on tokio blocking threads.
 

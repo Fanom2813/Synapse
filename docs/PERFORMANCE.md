@@ -65,8 +65,9 @@ must be justified against these numbers.
 - `synapse --perf-probe <scenario> --seconds 30` starts the app with mocks, runs the scenario
   (`idle`, `tray`, `run5`, `scroll`), and prints JSON: avg CPU %, peak/avg RSS, footprint (macOS),
   wakeups if available, frame times. Implemented with `sysinfo` / `memory-stats` reading its own process.
-- Perf tests in `synapse-acceptance/tests/m10_performance.rs` assert the table above (run in release,
-  marked `#[ignore]` on CI runners without a GPU and run locally / on a macOS runner).
+- Perf tests in `synapse-acceptance/tests/m10_performance.rs`: the headless part (probe works, idle requests no
+  frames, memory roughly bounded) runs on the Linux build host; the budget numbers are asserted in release on
+  the macOS GitHub Actions runner and on the owner's Mac (`#[ignore = "needs-desktop"]` elsewhere).
 - Dev builds show the GPUI Kit `gpui-fps` overlay (toggle Cmd/Ctrl-Alt-Shift-P).
 - Known risk to check early: whether GPUI still wakes every display refresh while idle on macOS/X11.
   If yes, document it and pick the backend (`fast` or not) that is idle-quiet.

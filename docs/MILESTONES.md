@@ -66,10 +66,11 @@ accept: `cargo test -p synapse-acceptance --test m03_agents`
    deterministic default from name. verify: `cargo test -p synapse-app avatar_render`
 4. **Avatar states + editor.** State animations (idle/thinking/speaking/working/needs-you/paused/error),
    settle after 30 s, stop when hidden or reduce-motion; editor with live preview and "surprise me". verify: `cargo test -p synapse-app avatar_states`
-5. **Persona parsing.** Markdown + YAML frontmatter (agency-agents, wshobson, VoltAgent, 0xfurai formats;
-   SKILL.md skills) into agent drafts; license recorded. verify: `cargo test -p synapse-personas parse`
-6. **Persona library.** Fetch collection indexes from GitHub (cached), search, category filter, preview,
-   import one/many; import from URL or local file. verify: `cargo test -p synapse-app persona_library`
+5. **Persona parsing.** Markdown + YAML frontmatter (agency-agents, wshobson, VoltAgent, 0xfurai, lst97 formats),
+   Fabric `system.md` patterns, SKILL.md skills (anthropics/skills, K-Dense) into agent/skill drafts; repo, sha, license recorded;
+   curated offline starter set in `assets/personas/`. verify: `cargo test -p synapse-personas parse`
+6. **Persona library.** Sources from PRD.md §5.2 fetched as GitHub tarballs (cached), search, category filter,
+   preview, import one/many; license badge, unlicensed sources link-only; import from URL or local file. verify: `cargo test -p synapse-app persona_library`
 7. **Projects + team templates.** Create project (name, goal, folder), choose template (Research squad,
    Product brainstorm, Investment analysis, Custom), lead agent, add/remove members. verify: `cargo test -p synapse-core projects`
 

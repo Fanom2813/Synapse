@@ -75,7 +75,7 @@ Mode presets choose which phases run and their parameters:
 |---|---|---|
 | Brainstorm | Plan → Brainstorm → Critique → Synthesize | STORM-style: lead asks each member for a distinct perspective first, then round-robin idea generation; critic attacks; votes rank ideas. |
 | Deep research | Plan → Research → Analysis → Critique → Revise → Synthesize | Lead writes research questions; members run the deep-research loop in parallel (DEEP-RESEARCH.md) and return compressed Findings. |
-| Deep analysis | Plan → Analysis → Critique → Revise → Synthesize | Frameworks per member (first principles, SWOT, risk, economics, ...). |
+| Deep analysis | Plan → Analysis → Critique → Revise → Synthesize | Frameworks per member (first principles, SWOT, risk, economics, ...), drawn from Fabric patterns (analyze_claims, check_falsifiability, analyze_risk, analyze_proposition, ...). |
 | Revise | Critique → Revise → Synthesize on an existing artifact | Produces a new artifact version with changelog and diff. |
 | Free discussion | Selector-driven chat until Done or budget | |
 

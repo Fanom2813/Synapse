@@ -67,9 +67,22 @@ Single user on their own computer (macOS, Windows, Linux).
 
 ### 5.2 Agents and personas
 - Create/edit/duplicate/delete agents; per-agent model or CLI backend, temperature/thinking level, tools.
-- **Persona library**: import from public GitHub collections (msitarzewski/agency-agents,
-  wshobson/agents, VoltAgent/awesome-claude-code-subagents, others with an open license): markdown with
-  YAML frontmatter. Browse, search, preview, import. Also import from a URL or local `.md` file.
+- **Persona library**: browse, search, preview and import from public GitHub collections; also from a
+  URL or local `.md` file. Built-in sources (all MIT unless noted):
+  | Source | What | Use in Synapse |
+  |---|---|---|
+  | msitarzewski/agency-agents (~160k★) | ~300 rich personas (strategy, marketing, sales, design, engineering, specialized...) with name, emoji, colour, vibe | **Main source of team members** for brainstorm/analysis |
+  | danielmiessler/Fabric (~44k★) | 266 "patterns" (`data/patterns/<name>/system.md`): analyze_claims, check_falsifiability, analyze_risk, analyze_paper, analyze_debate, extract_wisdom, create_idea_compass, rate_content... | **Analysis frameworks** members apply in Deep analysis / Critique phases; also importable as skills |
+  | K-Dense-AI/scientific-agent-skills (~49k★) | Agent Skills for scientific research (literature, databases, analysis) | Skills for research-heavy teams |
+  | wshobson/agents (~41k★) | 202 agents + 184 skills (Claude Code plugin layout) | Technical specialists + skills |
+  | VoltAgent/awesome-claude-code-subagents (~26k★) | ~170 agents by category | Technical specialists |
+  | 0xfurai/claude-code-subagents, lst97/claude-code-sub-agents, iannuttall/claude-agents | 138 / ~35 / ~10 agents | Extra specialists |
+  | anthropics/skills (~181k★) | Agent Skills reference set; per-skill licenses | Import skills whose own license allows it |
+  | f/prompts.chat (~173k★, ex awesome-chatgpt-prompts) | thousands of "act as" role prompts; GitHub shows license NOASSERTION | Import on user request only; never bundled until the license is confirmed |
+  | contains-studio/agents | no license | Link only, never imported automatically |
+  Each imported persona records repo, commit sha and license. A curated **starter set** (~25 personas picked
+  from agency-agents + Fabric frameworks + Synapse's own Lead/Critic/Fact-checker/Writer) ships in `assets/`
+  so templates work offline.
 - **Agent Skills** (`SKILL.md` folders): attach skills to agents; loaded on demand.
 - **Team templates**: e.g. "Research squad" (lead, 3 researchers, fact-checker, devil's advocate,
   writer), "Product brainstorm", "Investment analysis"; user can save their own.

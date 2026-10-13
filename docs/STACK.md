@@ -42,7 +42,7 @@ component list and examples, and on crates.io. Writing it ourselves is the last 
 | Headless browser | none by default; `chromiumoxide` 0.9 opt-in later, driving the user's own Chrome | Never bundle Chromium. |
 | Storage | `rusqlite =0.40.x` feature `bundled` (FTS5) + `rusqlite_migration` + `sqlite-vec` 0.1.9 | |
 | Embeddings | `model2vec-rs` 0.3 (static embeddings, no ONNX, tiny) | Lazy-loaded on first semantic search; model file downloaded once to the data dir. |
-| Personas | Markdown + YAML frontmatter via `gray_matter` or `serde_yaml_ng` | Sources: msitarzewski/agency-agents (MIT, ~300), wshobson/agents (MIT, 202 agents + 184 skills), VoltAgent/awesome-claude-code-subagents (MIT, ~170), 0xfurai/claude-code-subagents (MIT). contains-studio/agents has no license: link only, never bundle. |
+| Personas | Markdown + YAML frontmatter via `gray_matter` or `serde_yaml_ng`; Fabric patterns (`system.md`, no frontmatter); Agent Skills (`SKILL.md`) | Sources and licenses: PRD.md §5.2. Import via GitHub tarball (`/tarball/{ref}`), not per-file requests (60 req/h unauthenticated). |
 | Permissions | own rules engine + `globset` | Copy Claude Code's allow/ask/deny semantics (deny > ask > allow). |
 | Shell sandbox | `nono` 0.80 (Seatbelt / Landlock) | Windows: no sandbox, always ask. |
 | Diffs | `similar` | For write/edit previews and artifact changelogs. |

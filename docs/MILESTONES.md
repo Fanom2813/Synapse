@@ -8,9 +8,6 @@ milestone's acceptance test file in `crates/synapse-acceptance/tests/`), and fea
 Full project check (also in `.sg/config.toml`):
 `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
 
-Build host: a headless Linux VPS (SETUP.md). Every `verify:` and `accept:` command must pass there; desktop-only
-checks are `#[ignore = "needs-desktop"]` and run in GitHub Actions / on a Mac.
-
 Conventions for tests:
 - Acceptance file per milestone: `crates/synapse-acceptance/tests/mNN_<name>.rs`; it drives the real
   crates (and GPUI views via `TestAppContext`) through the user flows listed under the milestone.
@@ -211,8 +208,7 @@ accept: `cargo test -p synapse-acceptance --test m10_release`
 3. **Packaging + updates.** cargo-packager configs (dmg/app, msi/nsis, AppImage/deb), icons, updater against GitHub Releases, release workflow on tag. verify: `cargo packager --help >/dev/null && cargo test -p synapse-app updater`
 3b. **Motion polish pass.** Walk the micro-interaction list in UI.md §5 and make every item match the motion
    tokens (one consistent feel), add any missing ones, verify reduce-motion and that idle returns to zero frames. verify: `cargo test -p synapse-app motion`
-4. **Performance pass.** `--perf-probe run5|scroll`, compare `fast` feature, fix regressions until PERFORMANCE.md §1 holds; record results in `docs/PERF-RESULTS.md`. verify: `cargo test -p synapse-acceptance --test m10_performance` (headless parts: probe runs under `xvfb-run`, JSON output
-   valid, no frames requested when idle); the real budget numbers are checked by the macOS GitHub Actions job
+4. **Performance pass.** `--perf-probe run5|scroll`, compare `fast` feature, fix regressions until PERFORMANCE.md §1 holds; record results in `docs/PERF-RESULTS.md`. verify: `cargo test -p synapse-acceptance --release --test m10_performance -- --include-ignored`
 5. **User docs.** README quick start, screenshots, provider/CLI/MCP how-tos in `docs/user/`. verify: `test -f docs/user/getting-started.md`
 
 ---

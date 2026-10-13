@@ -117,6 +117,10 @@ accept: `cargo test -p synapse-acceptance --test m05_deep_research`
 3. **Research loop.** Breadth/depth loop (DEEP-RESEARCH.md §3), budget forcing, compressed findings with citations. verify: `cargo test -p synapse-research loop`
 4. **Perspectives + outline.** STORM-style perspectives mapped to members, Q&A with grounded expert, outline. verify: `cargo test -p synapse-research perspectives`
 5. **Critique, revise, fact-check.** Challenges linked to paragraphs, revision with changelog, quote check against sources. verify: `cargo test -p synapse-research factcheck`
+5b. **Agent Builder.** Create an agent from a prompt (PRD.md §5.2): clarify questions, deep research,
+   draft persona + knowledge pack with citations + avatar + skills/model suggestion, review with test chat,
+   save/export; culture/people guardrails; "refresh knowledge"; `propose_agent` tool for agents mid-run with
+   approval card; "build a team for this goal". Tests use MockLlm + MockSearch. verify: `cargo test -p synapse-core agent_builder && cargo test -p synapse-app agent_builder_ui`
 6a. **Browser bridge (user's browser).** `BrowserBridge` trait; backend A (chromiumoxide autoConnect to the
    user's Chrome) and backend B (chrome-devtools-mcp / Playwright MCP Bridge as connectors); `browser:*`
    search providers and `browser_*` tools; Synapse window/tab group only, human-pace limits, CAPTCHA/login

@@ -102,6 +102,30 @@ Single user on their own computer (macOS, Windows, Linux).
     in chat; editor with live preview; saved to the data dir as a normal skill folder (shareable).
   - **Learned skills** (as dots / OpenDots "automatic learning"): after a run, the lead may propose "save this
     as a skill" (e.g. a research procedure that worked); the user reviews and approves; never saved silently.
+- **Create an agent from a prompt (Agent Builder)**: the user describes the agent they want ("a Ugandan
+  agent who understands how people in Uganda think, talk and decide") and a built-in **Builder** agent
+  researches and drafts it. Flow:
+  1. **Clarify** (≤ 3 quick questions, skippable): e.g. which region/community (Buganda, Acholi, Ankole...,
+     urban Kampala vs rural), which languages (English, Luganda, Swahili...), what the agent is for
+     (market research, writing, advising), age/background if relevant.
+  2. **Research** with the deep-research engine (DEEP-RESEARCH.md): culture, values, history, social norms,
+     languages and common phrases, economy and daily life, current affairs, how decisions are made, what
+     outsiders get wrong. Prefers local sources (local news, universities, writers from the place) and
+     records every source.
+  3. **Draft** the agent: name, role, persona/instructions (voice, values, how it reasons, what it knows,
+     what it should not claim), a **knowledge pack** (a markdown reference file + key facts saved as the
+     agent's notes in memory, with citations), suggested skills/tools, a model suggestion, and an avatar look.
+  4. **Review**: the user sees the draft with its sources, edits anything, and can **test-chat** with it before saving.
+  5. **Save** as a normal agent (exportable as a persona `.md` + knowledge folder; shareable).
+  Rules for people/culture agents: grounded in sources, not stereotypes; reflects diversity inside the group
+  (regions, generations, urban/rural) and says when views differ; never claims to be a real person or to
+  speak for everyone; states it is an AI perspective built from research; the critic can challenge it like
+  any member. "Refresh knowledge" re-runs the research later and shows what changed.
+- **Agents creating agents**: during a run, the lead (or any member, if allowed) can call
+  `propose_agent(brief)` when the team lacks a perspective ("we need someone who knows Ugandan mobile-money
+  regulation"). The Builder runs in the background and the user gets an approval card with the draft;
+  approve = the new agent joins the team. Never added without approval (a project setting can allow
+  auto-approve for the lead). Also: "build a team for this goal" creates a whole team the same way.
 - **Team templates**: e.g. "Research squad" (lead, 3 researchers, fact-checker, devil's advocate,
   writer), "Product brainstorm", "Investment analysis"; user can save their own.
 

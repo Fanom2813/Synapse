@@ -53,7 +53,7 @@ Agents emit these by calling **team tools** (function calling), not by free-text
 `say`, `ask_agent(agent, question)`, `answer(message_id, text)`, `challenge(message_id, reason)`,
 `agree(message_id)`, `refuse(message_id, reason)`, `delegate(agent, task, deliverable)`,
 `report_finding(text, citations, confidence)`, `propose(conclusion)`, `vote(...)`, `ask_user(...)`,
-`steer_agent(agent, instruction, interrupt?)`, `attach(path | url | artifact | source)` (adds an attachment to
+`steer_agent(agent, instruction, interrupt?)`, `propose_agent(brief)` (Agent Builder, needs user approval), `attach(path | url | artifact | source)` (adds an attachment to
 the next message), `done(summary)`. CLI agents get the same tools through Synapse's in-process MCP server.
 If a model returns plain text without a tool call, it is recorded as `Say`.
 

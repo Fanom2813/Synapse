@@ -28,8 +28,9 @@ must be justified against these numbers.
   `rustls` with the `ring` provider (not `aws-lc-rs`), and no OpenSSL. One HTTP client (`reqwest`), one async
   runtime (`tokio`), one version of each crate: `cargo tree -d` must show no duplicate versions of heavy
   crates (reqwest, hyper, tokio, rustls, serde_json, image).
-- No bundled fonts (system UI font + system monospace), no bundled Chromium, no ONNX runtime, no ICU data.
-- Assets: SVG over PNG; avatars are SVG; icons from one icon set (GPUI Kit's); the models.dev snapshot is
+- Fonts: only the four subset variable fonts from UI.md §6 (≤ 700 KB total); no other bundled fonts.
+  No bundled Chromium, no ONNX runtime, no ICU data.
+- Assets: SVG over PNG; avatars are SVG; icons: only the Phosphor SVGs we use (UI.md §7), never two icon sets; the models.dev snapshot is
   trimmed to the fields we use and gz-compressed; tree-sitter grammars only for the languages listed in STACK.md.
 - Downloaded on first use instead of bundled: the embeddings model (model2vec), DiceBear avatar packs beyond
   the default set, persona collections, MCP servers, ACP adapters.

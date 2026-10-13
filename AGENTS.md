@@ -26,6 +26,8 @@ Read first: `docs/PRD.md` (what), `docs/ARCHITECTURE.md` (where), `docs/STACK.md
 - One source of truth for each thing: theme tokens in one module, settings keys in one enum, SQL in
   `synapse-store` only, provider/model metadata only from the catalog, prompt templates in one folder
   (`crates/synapse-core/prompts/`), error messages next to their error type.
+- Typography and icons only from UI.md §6–7 (theme tokens for font roles; icon names from `assets/icons/icons.toml`);
+  never hard-code a font family or add another icon set.
 - Shared UI pieces (avatar, message bubble, approval card, citation chip, empty state) are components used
   everywhere; never re-implemented per screen.
 

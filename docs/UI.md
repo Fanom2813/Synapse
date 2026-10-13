@@ -125,7 +125,56 @@ required for the idle-CPU budget (PERFORMANCE.md).
 - Map view: edges animate briefly when a new Ask/Delegate is sent.
 All durations ≤ 250 ms except ambient avatar float; everything honours "reduce motion".
 
-## 6. Themes
+## 6. Typography
+
+Synapse has two sides: a **playful team of characters** (the dots, their chatter) and **serious long-form
+research** (sources, analysis, reports). The type system gives each side its own voice and keeps dense chat
+easy to read. Not the usual Inter / SF / Roboto / Geist. All SIL Open Font License (free to bundle, credited
+in About → Credits), variable fonts from github.com/google/fonts (`ofl/<family>`).
+
+| Role | Font | Why it fits Synapse |
+|---|---|---|
+| **Brand & display**: wordmark, onboarding, project titles, empty states, agent names in large cards | **Bricolage Grotesque** (variable: optical size, width, weight) | A grotesque with ink-trap quirks and personality: it matches the bubbly avatars without being childish; optical sizing keeps it crisp from 14 px labels to 48 px titles. |
+| **UI & chat**: every message, label, menu, button | **Atkinson Hyperlegible Next** (variable weight + italic, Braille Institute, 2025) | Designed for maximum character distinction (I/l/1, O/0, rn/m). Users read many agents' streaming messages for a long time; legibility is the priority. Warm and distinctive, rarely used in apps. |
+| **Reports & artifacts**: synthesis, research reports, long findings in the Artifact panel and exports | **Newsreader** (variable: optical size, weight, italic; Production Type) | An editorial serif made for on-screen reading: research output reads like a publication, clearly separate from the chatter. |
+| **Code, data, tool calls, citations ids, numbers in tables** | **Atkinson Hyperlegible Mono** (variable weight + italic) | Same family as the UI font, so chat and code sit together in harmony; legible digits for costs, tokens and data. |
+
+Rules:
+- Type scale (px): 12 · 13 · **14 (body/chat)** · 16 · 20 · 24 · 32 · 48. Line height 1.5 for chat and reports,
+  1.25 for UI controls. Reports: max line length ~72 characters.
+- Weights: UI 400 / 500 / 650 (no 300 or thinner at small sizes); display 600–800; agent names in bubbles 650.
+- Tabular figures for numbers in tables, budgets and costs.
+- Size: fonts are **subset at build time** to Latin + Latin Extended + common punctuation/symbols
+  (`scripts/subset-fonts`, pyftsubset, dev-only), Bricolage pinned to the width default (drop the wdth axis),
+  regular + italic only where used. Target ≤ 700 KB for all four. Other scripts (Arabic, CJK, Devanagari, ...)
+  fall back to system fonts automatically.
+- Loaded with GPUI's text system from embedded bytes at startup (`add_fonts`); Settings → Appearance offers
+  "Use system font" for the UI role and a font-size slider.
+
+## 7. Icons
+
+**Phosphor Icons** (MIT, phosphor-icons): ~1,500 icons on a 256 grid with six weights (thin, light,
+regular, bold, fill, duotone). Not Lucide, which GPUI Kit ships by default and most apps use.
+Why it fits: Phosphor's soft, slightly rounded geometry matches the blob avatars, and its weights give a built-in
+state language:
+- **regular** for UI chrome (toolbar, menus, sidebar);
+- **fill** for the active/selected state (current tab, toggled tool);
+- **duotone** for empty states, onboarding and feature cards (the friendly, illustrated side);
+- **bold** at 12–14 px where regular gets thin.
+
+Rules:
+- Use only the icons we need: `scripts/sync-icons` copies a list (`assets/icons/icons.toml`, name → weight)
+  of SVGs into `assets/icons/phosphor/`; nothing else is bundled. Render with GPUI's `svg()` (monochrome,
+  tinted by theme colour); duotone uses the SVG's own opacity layer.
+- Map GPUI Kit's `IconName`s to Phosphor where the kit allows custom icon assets (follow GPUI Kit's docs for
+  overriding its asset source); never ship both Lucide and Phosphor.
+- Semantic icons for message kinds (UI.md §3) are fixed: Ask = chat-circle-dots, Challenge = lightning,
+  Agree = check-circle, Refuse = prohibit, Delegate = arrow-bend-up-right, Finding = magnifying-glass-plus,
+  Propose = lightbulb, Vote = hand-pointing, Steer = steering-wheel, NeedUser = hand-waving, Done = flag-checkered.
+  (Check each exists in the pinned Phosphor version; pick the nearest if renamed.)
+- Role badges on avatars use Microsoft Fluent Emoji 3D (MIT) as in §4, not Phosphor, so they read as character, not UI.
+
+## 8. Themes
 
 System / Light / Dark from GPUI Kit's theme system; one accent colour setting; avatar colours stay
 the same in both themes. Fonts: system UI font + a monospace for code.

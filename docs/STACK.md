@@ -14,6 +14,8 @@ component list and examples, and on crates.io. Writing it ourselves is the last 
 | UI framework | **GPUI** via **`gpui-kit = "=0.7.3"`** (longbridge/gpui-kit, Apache-2.0) | Never depend on `gpui` directly; use the kit's re-export (`gpui_kit::gpui`, which is `gpui-pre =0.3.9`, a snapshot of zed@93d7456). Every GPUI-touching crate must resolve to the same `gpui-pre`. Not crates.io `gpui` 0.2.2 (stale), not zed git, not gpui-ce (incompatible). |
 | Components | GPUI Kit: chat message/bubble/scroller, markdown (streaming, word fade-in; see its `stream-markdown` example), code editor + tree-sitter, dock/tabs/resizable panels, sidebar, dialogs/sheets, toasts, forms/settings, command palette, virtual list/table, charts, skeleton/shimmer, animation (spring/keyframes/stagger), theme | Enable only needed tree-sitter languages (rust, python, js/ts, json, bash, markdown). |
 | Faster renderer (optional) | GPUI Kit feature `gpui-fast` behind our cargo feature `fast` | Retained-mode fork; experimental. Benchmark both (PERFORMANCE.md). |
+| Fonts | Bricolage Grotesque, Atkinson Hyperlegible Next + Mono, Newsreader (all OFL, google/fonts) | Subset at build time; see UI.md §6. |
+| Icons | Phosphor Icons (MIT) replacing GPUI Kit's default Lucide set | Only the icons we use; see UI.md §7. |
 | Perf overlay | `gpui-fps` (from the kit) | Dev builds only, toggle with a hidden shortcut. |
 | Tray | `gpui-tray = "0.1"` with features `gpui-kit`, `menu-state` | Runs on GPUI's loop, no GTK. Fallback: `tray-icon` 0.26 + `muda` (KSNI backend on Linux). |
 | Global hotkey | `global-hotkey = "0.8"` | Wayland: XDG GlobalShortcuts portal via `ashpd`. |

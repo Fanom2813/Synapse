@@ -25,7 +25,8 @@ accept: `cargo test -p synapse-acceptance --test m01_foundation`
    `[workspace.dependencies]` from STACK.md, release profile from PERFORMANCE.md, `rust-toolchain.toml`,
    GitHub Actions matrix (macOS, Windows, Ubuntu) running the full check. verify: `cargo build --workspace && cargo test --workspace`
 2. **App shell window.** `synapse` binary opens a GPUI Kit window with sidebar / main / right-panel dock
-   layout (empty states), title bar, theme (system/light/dark) switch persisted. verify: `cargo test -p synapse-app shell`
+   layout (empty states), title bar, theme (system/light/dark) switch persisted; fonts (UI.md §6, subset script) and Phosphor icons
+   (UI.md §7, sync script, GPUI Kit icon override) wired in. verify: `cargo test -p synapse-app shell`
 3. **Tokio bridge.** Copy Zed's gpui_tokio pattern (license header kept): 2-thread runtime, spawn returning
    GPUI tasks, cancellation on drop; a demo command fetches a URL via reqwest without blocking UI. verify: `cargo test -p synapse-app tokio_bridge`
 4. **Store.** `synapse-store` with rusqlite bundled, WAL, migrations for the full schema in

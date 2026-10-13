@@ -94,9 +94,10 @@ Goal: Deep research mode searches, reads and follows leads, returns cited findin
 into a sourced report.
 accept: `cargo test -p synapse-acceptance --test m05_deep_research`
 
-1. **Search providers.** Trait + native-provider search, SearXNG, keyed APIs ported from paperfoot/search-cli
-   (MIT) with reciprocal-rank fusion, external `search`/`ketch` binaries when installed, DDG Lite
-   fallback; settings section; setup card when none configured. verify: `cargo test -p synapse-research search`
+1. **Search providers.** Trait; keyless `auto` chain ported from ketch (parallel → exa → keenable →
+   youcom → firecrawl → ddg) so research works with no keys; `multi` (RRF fusion) and `random` modes;
+   SearXNG/Degoog; keyed APIs ported from search-cli; provider-native search; external `ketch`/`search`
+   binaries; rate limits + circuit breaker; Settings section with backend health check. verify: `cargo test -p synapse-research search`
 2. **Reader + cache.** Fetch, robots, rate limits, readability → markdown, PDF, Jina fallback, source cache,
    chunking. verify: `cargo test -p synapse-research reader`
 3. **Research loop.** Breadth/depth loop (DEEP-RESEARCH.md §3), budget forcing, compressed findings with citations. verify: `cargo test -p synapse-research loop`

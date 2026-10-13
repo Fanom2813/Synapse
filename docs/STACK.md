@@ -60,7 +60,8 @@ component list and examples, and on crates.io. Writing it ourselves is the last 
 |---|---|---|
 | **thClaws/thClaws** (Rust agent harness, wry/tao GUI) | MIT OR Apache-2.0 | Shell confinement (Seatbelt / Landlock / bubblewrap fallback) if `nono` falls short; provider adapters; MCP wiring; multi-agent supervision ideas. Not a base to fork: different UI stack and product. |
 | **zed-industries/zed** `gpui_tokio`, ACP client code | Apache-2.0 parts only (Zed is mostly GPL: never copy GPL crates) | tokio bridge; how Zed spawns ACP agents |
-| **paperfoot/search-cli** | MIT | search providers, RRF |
+| **paperfoot/search-cli** | MIT | keyed search providers, RRF |
+| **1broseidon/ketch** (Go) | MIT | keyless `auto` search chain (parallel → exa → keenable → youcom → firecrawl → ddg), multi/random modes, scrape pipeline |
 | **dzhng/deep-research**, **stanford-oval/storm** | MIT | research loop, perspectives |
 
 ## Dev / test

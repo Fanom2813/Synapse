@@ -85,7 +85,8 @@ Single user on their own computer (macOS, Windows, Linux).
 - Cost tracking per run/agent/project from usage × catalog prices.
 
 ### 5.4 Deep research
-See DEEP-RESEARCH.md. Search providers: provider-native web search when the model has it, SearXNG URL,
+See DEEP-RESEARCH.md. **Works with no keys at all**: keyless search chain + built-in page reading + a
+local model or a logged-in CLI agent. Search providers: provider-native web search when the model has it, SearXNG URL,
 Brave / Tavily / Exa keys; page reading built in (readability → markdown) with Jina Reader fallback.
 Sources panel with dedupe, credibility notes, which agent used which source.
 

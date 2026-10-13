@@ -5,20 +5,32 @@ single search + summary. Ported, not invented: the loop from **dzhng/deep-resear
 questioning from **STORM** (MIT), budget forcing ideas from **jina-ai/node-DeepResearch** (Apache-2.0),
 planner/curation ideas from **GPT-Researcher** (Apache-2.0). Keep their license notices where code is ported.
 
-## 1. Search providers (`SearchProvider` trait), tried in this order
+## 1. Search providers (`SearchProvider` trait)
 
-1. **Provider-native web search** when the agent's model supports it (Anthropic web_search/web_fetch,
-   OpenAI Responses web_search, Gemini grounding; exposed by genai). Free with the user's key.
-2. **SearXNG** URL set by the user (JSON format must be enabled on that instance).
-3. **Keyed APIs** the user added (Brave, Serper, Exa, Linkup, Jina, Firecrawl, Tavily, SerpApi, Perplexity,
-   Parallel, xAI for X posts), adapters ported from paperfoot/search-cli (MIT). When several are
-   configured, fan out in parallel and merge with **reciprocal rank fusion** (a URL returned by several
-   engines outranks any single engine's top hit), as search-cli does.
-   Installed CLIs: if `search` (search-cli) or `ketch` is on PATH, offer it as a provider (JSON output).
-4. Best-effort fallback: DuckDuckGo Lite scrape (often bot-walled; never the only option advertised).
+**Research works with zero keys out of the box.** Default search mode is `auto`, ported from ketch
+(1broseidon/ketch, MIT, Go; port the logic and endpoints to Rust, keep its notice):
 
-If none is configured, the first research run shows a setup card explaining the options (with a
-one-line Docker command for SearXNG). Tests use a `MockSearch` with fixture results.
+1. Anything the user configured, preferred in this order: own **SearXNG** / **Degoog** instance →
+   keyed APIs (Brave, Serper, Exa, Linkup, Jina, Firecrawl, Tavily, SerpApi, Perplexity, Parallel, xAI;
+   adapters ported from paperfoot/search-cli, MIT) → **provider-native web search** of the agent's model
+   (Anthropic web_search/web_fetch, OpenAI web_search, Gemini grounding).
+2. Otherwise the **keyless hosted chain**, first that answers wins:
+   `parallel → exa → keenable → youcom → firecrawl → ddg`. Keys for these are optional and only lift caps.
+3. External tools if on PATH: `ketch search --json`, `search` (search-cli) `--json`.
+
+Modes (as in ketch): `auto` (first that answers), `multi` (fan out to every usable backend and merge
+with **reciprocal rank fusion**, dedupe by URL, tag each hit with the engines that returned it), and
+`random` (spread load across keyless backends to stay under their rate limits). Deep research uses
+`multi` for planning queries and `random` for the many follow-up queries.
+
+Keyless backends are free hosted tiers: they have rate limits and can change. So: per-backend
+`governor` limits, a circuit breaker that skips a backend for 10 min after repeated 429/5xx, a
+`doctor` check in Settings showing which backends currently answer, and a nightly-style live test
+(`SYNAPSE_LIVE=1`) that fails loudly when a keyless endpoint changes. Tests use `MockSearch` fixtures.
+
+**Fully keyless setup** = keyless search (above) + keyless reading (§2) + a model that needs no API key:
+a local model (Ollama / LM Studio) or an installed CLI agent the user is logged into (Claude Code, Codex,
+Gemini CLI, OpenCode), which uses their subscription. CLI agents also bring their own web search tools.
 
 ## 2. Reading
 

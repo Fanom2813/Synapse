@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+pub mod research_loop;
 pub mod reader;
 
 use serde::{Deserialize, Serialize};

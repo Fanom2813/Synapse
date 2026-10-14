@@ -8,6 +8,7 @@ pub mod backend;
 pub mod config;
 pub mod manager;
 pub mod oauth;
+pub mod server;
 
 pub use backend::{CallResult, McpBackend, McpError, ToolAnnotations, ToolInfo};
 pub use config::{McpServerConfig, OAuthServerConfig, Transport};

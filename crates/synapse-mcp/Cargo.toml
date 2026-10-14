@@ -12,6 +12,8 @@ tokio = { workspace = true }
 secrecy = { workspace = true }
 futures = { workspace = true }
 async-trait = { workspace = true }
+getrandom = { workspace = true }
+hex = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

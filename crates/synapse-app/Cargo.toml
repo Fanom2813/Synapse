@@ -29,6 +29,7 @@ thiserror.workspace = true
 synapse-core = { path = "../synapse-core" }
 synapse-personas = { path = "../synapse-personas" }
 synapse-store = { path = "../synapse-store" }
+synapse-acp = { path = "../synapse-acp" }
 synapse-llm = { path = "../synapse-llm" }
 synapse-mcp = { path = "../synapse-mcp" }
 secrecy = { workspace = true }

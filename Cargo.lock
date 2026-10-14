@@ -7677,6 +7677,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "synapse-acp",
  "synapse-core",
  "synapse-llm",
  "synapse-mcp",

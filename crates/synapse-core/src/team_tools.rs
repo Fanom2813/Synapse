@@ -82,7 +82,11 @@ pub fn team_tool_specs() -> Vec<TeamToolSpec> {
             name: "say".into(),
             description: "Say something to the room (ordinary contribution).".into(),
             parameters: schema(
-                &[("text", "string", str_prop("What to say to the room (markdown)"))],
+                &[(
+                    "text",
+                    "string",
+                    str_prop("What to say to the room (markdown)"),
+                )],
                 &["text"],
             ),
         },
@@ -815,14 +819,17 @@ mod team_tools_tests {
         assert!(TEAM_TOOL_NAMES.contains(&"say"));
         let specs = team_tool_specs();
         let say_spec = specs.iter().find(|s| s.name == "say").expect("say spec");
-        assert!(say_spec.parameters.get("properties").unwrap().get("text").is_some());
+        assert!(say_spec
+            .parameters
+            .get("properties")
+            .unwrap()
+            .get("text")
+            .is_some());
 
         let (bus, tools) = setup("lead");
         // Dispatched via typed method: room-addressed Say, redacted.
         let secret = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";
-        let env = tools
-            .say(&format!("Hello room {secret}"))
-            .unwrap();
+        let env = tools.say(&format!("Hello room {secret}")).unwrap();
         assert_eq!(env.to, Recipients::Room);
         assert!(matches!(env.kind, Kind::Say));
         assert!(!env.body.contains(secret));

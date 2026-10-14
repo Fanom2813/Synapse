@@ -10,8 +10,8 @@ use std::sync::{Arc, Mutex};
 
 use synapse_app::team_room::{RoomAgentState, TeamRoomState};
 use synapse_core::{
-    Envelope, Kind, Participant, Priority, Recipients, RunMode, RunStatus, TeamBus, TeamTools,
-    WorkerBackend, WorkerConfig, can_interrupt, can_steer, drain_safe_point, run_worker,
+    can_interrupt, can_steer, drain_safe_point, run_worker, Envelope, Kind, Participant, Priority,
+    Recipients, RunMode, RunStatus, TeamBus, TeamTools, WorkerBackend, WorkerConfig,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -132,7 +132,9 @@ fn m04_team_exchange_say_ask_answer_challenge() {
 
     // Invalid tool calls store nothing
     let before = bus.latest_seq("c-m04");
-    assert!(lead_tools.call("ask_agent", serde_json::json!({"agent":"mira"})).is_err());
+    assert!(lead_tools
+        .call("ask_agent", serde_json::json!({"agent":"mira"}))
+        .is_err());
     assert_eq!(bus.latest_seq("c-m04"), before);
 
     // Lag resync: a slow observer replays missed envelopes from the store
@@ -331,7 +333,7 @@ fn m04_room_streaming_interjection_and_controls() {
     assert_eq!(mentioned, vec!["mira".to_string()]);
     assert!(room.messages().iter().any(|m| m.envelope.id == uid));
     // Direct push of envelopes from the bus also updates room (typed styles).
-    let mut bus = TeamBus::new();
+    let bus = TeamBus::new();
     let bus_env = {
         let tools = TeamTools::for_agent(&bus, "ivan", "run-1", "c-m04");
         tools.say("A quick note from Ivan.").unwrap()

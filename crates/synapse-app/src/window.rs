@@ -509,11 +509,7 @@ pub fn compact_run_pill_text(shell: &AppShell) -> String {
 /// Width hint for headless layout decisions (real view passes the window
 /// width instead). Narrow enough that tests exercise the overflow path.
 fn window_width_hint() -> f32 {
-    if cfg!(test) {
-        1280.0
-    } else {
-        1280.0
-    }
+    1280.0
 }
 
 /// Run popover body: phase timeline + budget + available actions.

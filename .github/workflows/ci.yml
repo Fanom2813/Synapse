@@ -33,3 +33,24 @@ jobs:
         run: cargo build --workspace
       - name: Test
         run: cargo test --workspace
+  perf-gates:
+    name: perf gates (macos)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - name: Build release
+        run: cargo build --release -p synapse-app
+      - name: Binary size cap (30 MB)
+        run: |
+          size=$(stat -f%z target/release/synapse 2>/dev/null || stat -c%s target/release/synapse)
+          echo "synapse binary bytes: $size"
+          test "$size" -le 31457280
+      - name: Duplicate heavy deps check
+        run: cargo tree --release -d -p synapse-app
+      - name: Idle probe against PERFORMANCE.md caps
+        run: ./target/release/synapse --perf-probe idle --seconds 30
+      - name: Tray probe against PERFORMANCE.md caps
+        run: ./target/release/synapse --perf-probe tray --seconds 15

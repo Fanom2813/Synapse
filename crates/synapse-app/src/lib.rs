@@ -6,6 +6,7 @@ pub mod icons;
 pub mod layout;
 pub mod lifecycle;
 pub mod logging;
+pub mod perf_probe;
 pub mod runtime;
 pub mod settings;
 pub mod shell;

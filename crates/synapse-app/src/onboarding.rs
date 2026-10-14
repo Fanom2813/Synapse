@@ -13,10 +13,10 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
-// Steps (UI.md §9: seven steps)
+// Steps (UI.md §9: five steps)
 // ---------------------------------------------------------------------------
 
-/// The seven onboarding steps, in order.
+/// The five onboarding steps, in order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Step {
@@ -24,9 +24,7 @@ pub enum Step {
     LeadName,
     LeadLook,
     Brains,
-    Research,
-    Team,
-    FirstProject,
+    AllSet,
 }
 
 impl Step {
@@ -36,9 +34,7 @@ impl Step {
             Step::LeadName,
             Step::LeadLook,
             Step::Brains,
-            Step::Research,
-            Step::Team,
-            Step::FirstProject,
+            Step::AllSet,
         ]
     }
 
@@ -47,7 +43,7 @@ impl Step {
     }
 
     pub fn from_index(i: usize) -> Step {
-        Self::all().get(i).copied().unwrap_or(Step::FirstProject)
+        Self::all().get(i).copied().unwrap_or(Step::AllSet)
     }
 
     pub fn title(self) -> &'static str {
@@ -56,16 +52,8 @@ impl Step {
             Step::LeadName => "Name your lead",
             Step::LeadLook => "Give it a look",
             Step::Brains => "How agents think",
-            Step::Research => "Make research stronger (optional)",
-            Step::Team => "Pick your team",
-            Step::FirstProject => "Start your first project",
+            Step::AllSet => "You're all set",
         }
-    }
-
-    /// Research is the only optional-by-default step; everything else is
-    /// required but skippable (skip records the step and moves on).
-    pub fn optional(self) -> bool {
-        matches!(self, Step::Research)
     }
 }
 
@@ -133,22 +121,15 @@ impl DetectionSnapshot {
     }
 }
 
-/// Example goals offered as chips on the FirstProject step.
-pub const EXAMPLE_GOALS: [&str; 3] = [
-    "Is there a market for solar dryers for Ugandan coffee farmers?",
-    "What do recent papers say about retrieval-augmented reasoning?",
-    "Should we launch a usage-based tier? Weigh risks and options.",
-];
-
 /// Lead introduction posted into the room when the first project starts.
-pub fn lead_introduction(lead_name: &str, template_name: &str, goal: &str) -> String {
+pub fn lead_introduction(lead_name: &str, template_name: &str) -> String {
     let lead = if lead_name.trim().is_empty() {
         "Dottie"
     } else {
         lead_name.trim()
     };
     format!(
-        "Hi, I'm {lead}! I'll lead this {template_name} team. Our goal: {goal}. I'll plan the work, assign questions, and converge on findings — jump in any time with @mentions."
+        "Hi, I'm {lead}! I'll lead your {template_name} team. Tell me what you'd like to look into and I'll plan the work, assign questions, and converge on findings. Jump in any time with @mentions."
     )
 }
 
@@ -171,10 +152,7 @@ pub struct PersistedOnboarding {
     pub api_provider: String,
     /// Never the key itself — only whether a live test passed.
     pub api_key_ok: bool,
-    pub browser_connected: bool,
-    pub searxng_url: String,
     pub template_id: String,
-    pub project_goal: String,
     pub skipped: Vec<String>,
     pub detection: DetectionSnapshot,
     pub completed: bool,
@@ -251,7 +229,7 @@ impl OnboardingFlow {
 
     pub fn step(&self) -> Step {
         if self.state.completed {
-            return Step::FirstProject;
+            return Step::AllSet;
         }
         Step::from_index(self.state.step_index.min(Step::all().len() - 1))
     }
@@ -273,9 +251,7 @@ impl OnboardingFlow {
     pub fn can_continue(&self) -> bool {
         match self.step() {
             Step::Brains => self.state.detection.found_usable_backend() || self.state.api_key_ok,
-            Step::FirstProject => self.state.project_goal.trim().len() >= 3,
             Step::LeadName => !self.state.lead_name.trim().is_empty(),
-            Step::Team => !self.state.template_id.trim().is_empty(),
             _ => true,
         }
     }
@@ -284,7 +260,7 @@ impl OnboardingFlow {
     pub fn blocked_hint(&self) -> Option<&'static str> {
         match self.step() {
             Step::Brains if !self.can_continue() => {
-                Some("Still looking — add a key, or continue free with keyless research once a local model or logged-in CLI appears.")
+                Some("Still looking. Add a provider with an API key, or wait for a local model or a logged-in CLI to appear.")
             }
             _ => None,
         }
@@ -341,29 +317,9 @@ impl OnboardingFlow {
     pub fn set_api_result(&mut self, provider: &str, ok: bool) {
         self.state.api_provider = provider.trim().to_string();
         self.state.api_key_ok = ok;
-        if ok {
-            let mut snap = self.state.detection.clone();
-            snap.api_key_ok = true;
-            self.state.detection = snap;
-        }
-    }
-
-    pub fn set_research(&mut self, browser_connected: bool, searxng_url: &str) {
-        self.state.browser_connected = browser_connected;
-        self.state.searxng_url = searxng_url.trim().to_string();
-    }
-
-    pub fn set_template(&mut self, template_id: &str) -> bool {
-        let id = template_id.trim();
-        let known = synapse_core::builtin_template(id).is_some();
-        if known {
-            self.state.template_id = id.to_string();
-        }
-        known
-    }
-
-    pub fn set_goal(&mut self, goal: &str) {
-        self.state.project_goal = goal.trim().to_string();
+        let mut snap = self.state.detection.clone();
+        snap.api_key_ok = ok;
+        self.state.detection = snap;
     }
 
     pub fn template_name(&self) -> String {
@@ -372,18 +328,11 @@ impl OnboardingFlow {
             .unwrap_or_else(|| "Custom".to_string())
     }
 
-    /// Finish: validates the goal, marks complete, returns the lead greeting
-    /// the room posts as the window morphs into the main layout.
-    pub fn finish(&mut self) -> Result<String, String> {
-        if self.state.project_goal.trim().len() < 3 {
-            return Err("Describe your goal in a few words first.".to_string());
-        }
+    /// Finish: marks complete and returns the lead greeting the room posts as
+    /// the window morphs into the main layout.
+    pub fn finish(&mut self) -> String {
         self.state.completed = true;
-        Ok(lead_introduction(
-            &self.state.lead_name,
-            &self.template_name(),
-            self.state.project_goal.trim(),
-        ))
+        lead_introduction(&self.state.lead_name, &self.template_name())
     }
 
     pub fn is_completed(&self) -> bool {
@@ -481,7 +430,6 @@ impl FirstLaunch {
         let s = flow.snapshot();
         let fresh = s.step_index == 0
             && s.skipped.is_empty()
-            && s.project_goal.is_empty()
             && (s.lead_name.is_empty() || s.lead_name == "Dottie");
         if fresh {
             // Returning users (existing projects, never started onboarding)
@@ -510,8 +458,8 @@ impl FirstLaunch {
     }
 
     /// Headless description of the current wizard step for the GPUI view.
-    /// Format: `"Step i/7 · Title · hint"` plus field values so the view
-    /// can render each of the seven steps without extra state.
+    /// Format: `"Step i/5 · Title · hint"` plus field values so the view
+    /// can render each step without extra state.
     pub fn screen_text(&self) -> String {
         let (n, total) = self.flow.progress();
         let step = self.flow.step();
@@ -531,11 +479,7 @@ impl FirstLaunch {
                 s.detection.cli_agents.len(),
                 s.detection.local_models.len()
             ),
-            Step::Research => {
-                format!("browser={} searxng={}", s.browser_connected, s.searxng_url)
-            }
-            Step::Team => format!("template={} ({})", s.template_id, self.flow.template_name()),
-            Step::FirstProject => format!("goal={}", s.project_goal),
+            Step::AllSet => format!("lead={} team={}", s.lead_name, self.flow.template_name()),
         };
         let cont = if self.flow.can_continue() {
             "Continue"
@@ -601,22 +545,6 @@ impl FirstLaunch {
         self.persist(store);
     }
 
-    pub fn set_research(&mut self, store: &synapse_store::Store, browser: bool, url: &str) {
-        self.flow.set_research(browser, url);
-        self.persist(store);
-    }
-
-    pub fn set_template(&mut self, store: &synapse_store::Store, template_id: &str) -> bool {
-        let ok = self.flow.set_template(template_id);
-        self.persist(store);
-        ok
-    }
-
-    pub fn set_goal(&mut self, store: &synapse_store::Store, goal: &str) {
-        self.flow.set_goal(goal);
-        self.persist(store);
-    }
-
     pub fn advance(&mut self, store: &synapse_store::Store) {
         self.flow.next();
         self.persist(store);
@@ -646,22 +574,22 @@ impl FirstLaunch {
         self.flow.is_completed()
     }
 
-    /// Finish the wizard: validates the goal, marks complete, creates/opens
-    /// the first project, posts the lead introduction into its room, and
-    /// persists so returning users bypass onboarding.
+    /// Finish the wizard: marks complete, creates the first project (named
+    /// "First project": the user states the goal in the room), posts the lead
+    /// introduction into its room, and persists so returning users bypass
+    /// onboarding.
     pub fn complete(
         &mut self,
         store: &synapse_store::Store,
     ) -> Result<CompletedOnboarding, String> {
-        let intro = self.flow.finish().map_err(|e| e.to_string())?;
+        let intro = self.flow.finish();
         let s = self.flow.snapshot().clone();
         let project_id = synapse_store::new_id("project");
-        let name = short_project_name(&s.project_goal);
         let project = store
             .create_project(&synapse_store::NewProject {
                 id: project_id.clone(),
-                name,
-                goal: s.project_goal.clone(),
+                name: "First project".to_string(),
+                goal: String::new(),
                 folder: String::new(),
                 lead_agent_id: s.lead_name.clone(),
                 template: s.template_id.clone(),
@@ -720,24 +648,6 @@ impl FirstLaunch {
     }
 }
 
-fn short_project_name(goal: &str) -> String {
-    let g = goal.trim();
-    if g.is_empty() {
-        return "First project".to_string();
-    }
-    let first: String = g
-        .split(['.', '!', '?', '\n'])
-        .next()
-        .unwrap_or(g)
-        .trim()
-        .to_string();
-    if first.chars().count() <= 60 {
-        first
-    } else {
-        first.chars().take(57).collect::<String>() + "..."
-    }
-}
-
 #[cfg(test)]
 mod onboarding_tests {
     use super::*;
@@ -763,10 +673,10 @@ mod onboarding_tests {
     }
 
     #[test]
-    fn onboarding_steps_cover_seven_in_order() {
-        assert_eq!(Step::all().len(), 7);
+    fn onboarding_steps_cover_five_in_order() {
+        assert_eq!(Step::all().len(), 5);
         assert_eq!(Step::all().first(), Some(&Step::Hello));
-        assert_eq!(Step::all().last(), Some(&Step::FirstProject));
+        assert_eq!(Step::all().last(), Some(&Step::AllSet));
         for (i, s) in Step::all().iter().enumerate() {
             assert_eq!(s.index(), i);
             assert_eq!(Step::from_index(i), *s);
@@ -818,7 +728,7 @@ mod onboarding_tests {
         });
         assert!(f.can_continue());
         f.press_key("Enter");
-        assert_eq!(f.step(), Step::Research);
+        assert_eq!(f.step(), Step::AllSet);
     }
 
     #[test]
@@ -897,20 +807,13 @@ mod onboarding_tests {
     }
 
     #[test]
-    fn onboarding_team_and_first_project_finish_with_introduction() {
+    fn onboarding_all_set_finishes_without_a_goal_and_introduces_the_lead() {
         let mut f = usable_flow();
-        f.state.step_index = Step::Team.index();
-        assert!(f.set_template("product-brainstorm"));
-        assert!(!f.set_template("nope-not-real"));
-        // Goal required before finish.
-        f.state.step_index = Step::FirstProject.index();
-        assert!(!f.can_continue());
-        assert!(f.finish().is_err());
-        f.set_goal(EXAMPLE_GOALS[0]);
+        f.state.step_index = Step::AllSet.index();
         assert!(f.can_continue());
-        let intro = f.finish().unwrap();
-        assert!(intro.contains("Dottie") || intro.contains(&f.snapshot().lead_name));
-        assert!(intro.contains("market for solar dryers") || intro.contains("goal"));
+        let intro = f.finish();
+        assert!(intro.contains("Dottie"));
+        assert!(intro.contains("Research squad"));
         assert!(f.is_completed());
         // Completed state survives a restart.
         let store = mem_store();
@@ -942,20 +845,17 @@ mod onboarding_tests {
         assert!(!DetectionSnapshot::default().simplest_option().is_empty());
     }
 
-    fn drive_to_goal(store: &synapse_store::Store) -> FirstLaunch {
+    fn drive_to_end(store: &synapse_store::Store) -> FirstLaunch {
         let mut w = FirstLaunch::open(store);
         w.set_lead_name(store, "Dottie");
         w.set_look(store, "bean", "green", "diamond", "");
         w.set_brains_backend(store, "claude");
         w.set_api_result(store, "anthropic", true);
-        assert!(w.set_template(store, "research-squad"));
-        w.set_research(store, false, "");
-        w.set_goal(store, EXAMPLE_GOALS[0]);
         w
     }
 
     #[test]
-    fn onboarding_first_launch_renders_all_seven_steps() {
+    fn onboarding_first_launch_renders_all_five_steps() {
         let store = mem_store();
         let mut w = FirstLaunch::open(&store);
         assert!(w.should_show_self(&store));
@@ -970,7 +870,7 @@ mod onboarding_tests {
                     w.set_api_result(&store, "anthropic", true);
                     w.advance(&store);
                 }
-                Step::FirstProject => break,
+                Step::AllSet => break,
                 _ => w.advance(&store),
             }
         }
@@ -999,17 +899,17 @@ mod onboarding_tests {
     #[test]
     fn onboarding_first_launch_completes_into_workspace() {
         let store = mem_store();
-        let mut w = drive_to_goal(&store);
+        let mut w = drive_to_end(&store);
         // Detection never blocks stepping: probe runs off-thread.
         w.start_background_detection(DetectionSnapshot::default);
         assert!(w.can_continue() || w.flow().step() != Step::Brains);
         let done = w.complete(&store).expect("complete");
         assert!(!done.project_id.is_empty());
         assert!(done.introduction.contains("Dottie"));
-        assert!(done.introduction.contains("market for solar"));
-        // Project created with goal/template, intro posted to its room.
+        // First project created with the default team, intro posted to its room.
         let project = store.get_project(&done.project_id).expect("project");
-        assert!(project.goal.contains("market for solar"));
+        assert_eq!(project.name, "First project");
+        assert_eq!(project.template, "research-squad");
         let messages = store
             .list_messages(&done.conversation_id, 10, 0)
             .expect("messages");

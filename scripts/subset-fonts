@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""Pin and subset the UI.md §6 fonts into assets/fonts/ (dev-only, never at build/run time).
+
+    pip install fonttools brotli
+    # download the variable TTFs + OFL.txt from github.com/google/fonts/tree/main/ofl/<family>
+    python3 scripts/subset-fonts path/to/downloaded/ttfs
+
+Each variable font is pinned to the weights we use (static instances load reliably
+through GPUI's text system) and subset to Latin + Latin Extended + common punctuation.
+Bricolage keeps its default width; its optical size is pinned to display (96).
+"""
+import os
+import shutil
+import sys
+
+from fontTools import subset
+from fontTools.ttLib import TTFont
+from fontTools.varLib import instancer
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT = os.path.join(REPO, "assets", "fonts")
+
+# (source file, output stem, [(weight, extra axis pins)])
+FONTS = [
+    ("BricolageGrotesque[opsz,wdth,wght].ttf", "BricolageGrotesque", [(600, {"opsz": 48, "wdth": 100}), (800, {"opsz": 48, "wdth": 100})]),
+    ("AtkinsonHyperlegibleNext[wght].ttf", "AtkinsonHyperlegibleNext", [(400, {}), (500, {}), (700, {})]),
+    ("Newsreader[opsz,wght].ttf", "Newsreader", [(400, {"opsz": 16}), (700, {"opsz": 16})]),
+    ("AtkinsonHyperlegibleMono[wght].ttf", "AtkinsonHyperlegibleMono", [(400, {}), (700, {})]),
+]
+UNICODES = "U+0020-007E,U+00A0-017F,U+0180-024F,U+2010-2027,U+2030-203A,U+20AC,U+2122,U+2190-2193,U+2212,U+2318,U+2713,U+2022"
+
+
+def main():
+    if len(sys.argv) != 2:
+        sys.exit(__doc__)
+    src = sys.argv[1]
+    shutil.rmtree(OUT, ignore_errors=True)
+    os.makedirs(OUT)
+    for file, stem, instances in FONTS:
+        for weight, pins in instances:
+            font = TTFont(os.path.join(src, file))
+            limits = {"wght": weight, **pins}
+            font = instancer.instantiateVariableFont(font, limits)
+            opts = subset.Options()
+            opts.layout_features = ["*"]
+            opts.name_IDs = [1, 2, 3, 4, 6, 13, 14]
+            sub = subset.Subsetter(opts)
+            sub.populate(unicodes=subset.parse_unicodes(UNICODES))
+            sub.subset(font)
+            font["OS/2"].usWeightClass = weight
+            path = os.path.join(OUT, f"{stem}-{weight}.ttf")
+            font.save(path)
+            print(f"{path} {os.path.getsize(path) // 1024} KB")
+        # OFL license travels with the fonts
+    print("total KB:", sum(os.path.getsize(os.path.join(OUT, f)) for f in os.listdir(OUT)) // 1024)
+
+
+if __name__ == "__main__":
+    main()

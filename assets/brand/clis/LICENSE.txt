@@ -1,0 +1,5 @@
+Logos of the coding CLIs Synapse can detect (claude, codex, gemini, copilot, cursor,
+goose, opencode). Files come from @lobehub/icons-static-svg 1.95.1
+(https://github.com/lobehub/lobe-icons, MIT), with only the fixed width/height and
+inline style removed. The marks are trademarks of their owners and are shown only to
+identify the matching installed tool.

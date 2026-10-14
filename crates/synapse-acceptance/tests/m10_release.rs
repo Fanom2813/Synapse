@@ -11,7 +11,7 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::thread::JoinHandle;
 
-use synapse_app::onboarding::{DetectionSnapshot, FirstLaunch, Step, EXAMPLE_GOALS};
+use synapse_app::onboarding::{DetectionSnapshot, FirstLaunch, Step};
 use synapse_app::updater::{
     check_for_update_with_endpoint, manifest_is_newer, update_config, UPDATE_MANIFEST_ENDPOINT,
 };
@@ -81,16 +81,8 @@ fn m10_onboarding_progress_resume_and_first_project() {
     }
     assert!(resumed.can_continue(), "detection unblocks Brains offline");
     assert!(resumed.flow().blocked_hint().is_none());
-    resumed.advance(&store); // Brains -> Research
-    resumed.set_research(&store, false, "");
-    resumed.skip(&store); // Research is optional; skip records it
-    assert!(resumed.flow().skipped().iter().any(|s| s == "research"));
-    assert!(resumed.set_template(&store, "research-squad"));
-    assert!(!resumed.set_template(&store, "not-a-template"));
-    while resumed.flow().step() != Step::FirstProject {
-        resumed.advance(&store);
-    }
-    resumed.set_goal(&store, EXAMPLE_GOALS[0]);
+    resumed.advance(&store); // Brains -> All set
+    assert_eq!(resumed.flow().step(), Step::AllSet);
     assert!(resumed.can_continue());
 
     // Completion creates the first project, posts the lead introduction
@@ -99,9 +91,8 @@ fn m10_onboarding_progress_resume_and_first_project() {
     assert!(!done.project_id.is_empty());
     assert!(!done.conversation_id.is_empty());
     assert!(done.introduction.contains("Dottie"));
-    assert!(done.introduction.contains("solar"));
     let project = store.get_project(&done.project_id).expect("project saved");
-    assert!(project.goal.contains("solar"));
+    assert_eq!(project.name, "First project");
     let messages = store
         .list_messages(&done.conversation_id, 10, 0)
         .expect("intro posted");

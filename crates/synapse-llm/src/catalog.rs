@@ -192,6 +192,21 @@ impl Catalog {
         Ok(v)
     }
 
+    /// A sensible default for a provider the user just connected: among the
+    /// models that support tool calls, the one with the largest context window
+    /// (ties by id so the pick is stable). `None` when it lists no such model.
+    pub fn suggested_model(&self, provider_id: &str) -> Option<&CatalogModel> {
+        self.providers
+            .get(provider_id)?
+            .models
+            .values()
+            .filter(|m| m.tool_call)
+            .max_by(|a, b| {
+                let ctx = |m: &CatalogModel| m.limit.context.unwrap_or(0);
+                ctx(a).cmp(&ctx(b)).then_with(|| b.id.cmp(&a.id))
+            })
+    }
+
     pub fn model_count(&self) -> usize {
         self.providers.values().map(|p| p.models.len()).sum()
     }
@@ -410,6 +425,24 @@ pub async fn refresh_if_stale(
 #[cfg(test)]
 mod catalog_tests {
     use super::*;
+
+    #[test]
+    fn suggested_model_prefers_tool_calling_models_with_most_context() {
+        let cat = Catalog::embedded().unwrap();
+        let m = cat
+            .suggested_model("anthropic")
+            .expect("anthropic lists models");
+        assert!(m.tool_call);
+        let best = cat
+            .models("anthropic")
+            .unwrap()
+            .into_iter()
+            .filter(|m| m.tool_call)
+            .filter_map(|m| m.limit.context)
+            .max();
+        assert_eq!(m.limit.context, best);
+        assert!(cat.suggested_model("no-such-provider").is_none());
+    }
 
     #[test]
     fn catalog_embedded_loads_providers_and_models() {

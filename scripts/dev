@@ -1,0 +1,14 @@
+#!/bin/sh
+# Rebuild and restart Synapse whenever source, assets or fonts change.
+# GPUI has no hot reload, so this is the closest: save a file, the running
+# window closes and the new build opens (incremental builds take seconds).
+# Needs watchexec: `brew install watchexec` (or `cargo install watchexec-cli`).
+set -e
+cd "$(dirname "$0")/.."
+command -v watchexec >/dev/null 2>&1 || {
+  echo "scripts/dev needs watchexec: brew install watchexec" >&2
+  exit 1
+}
+exec watchexec --restart --stop-signal SIGTERM --debounce 300ms \
+  --watch crates --watch assets --exts rs,toml,svg,ttf,png \
+  -- cargo run -p synapse-app

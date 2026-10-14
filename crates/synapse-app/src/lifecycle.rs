@@ -324,7 +324,17 @@ pub fn bind_single_instance(
     let path = instance_socket_path(dir);
     let name = socket_name_for(dir)?;
     match ListenerOptions::new().name(name).create_sync() {
-        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => Err(e),
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+            // A killed app leaves its socket file behind, which also reports
+            // AddrInUse. Only a connect that succeeds proves a live primary.
+            if primary_is_alive(dir) {
+                return Err(e);
+            }
+            let _ = std::fs::remove_file(&path);
+            ListenerOptions::new()
+                .name(socket_name_for(dir)?)
+                .create_sync()
+        }
         Err(e) => {
             // Stale file left behind: drop it once and retry.
             let _ = std::fs::remove_file(&path);
@@ -341,6 +351,14 @@ pub fn bind_single_instance(
         }
         ok => ok,
     }
+}
+
+/// True when something is listening on the single-instance socket.
+fn primary_is_alive(dir: &std::path::Path) -> bool {
+    use interprocess::local_socket::traits::Stream as _;
+    socket_name_for(dir)
+        .and_then(interprocess::local_socket::Stream::connect)
+        .is_ok()
 }
 
 /// Tell the running instance to focus its window. Returns true when a
@@ -609,6 +627,23 @@ mod tests {
             ..TraySnapshot::idle()
         };
         assert_eq!(tray_icon_state(&approvals_only), TrayIconState::NeedsYou);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn lifecycle_single_instance_replaces_socket_left_by_killed_app() {
+        let dir =
+            std::env::temp_dir().join(format!("synapse-lifecycle-stale-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = instance_socket_path(&dir);
+        let _ = std::fs::remove_file(&path);
+        // std never unlinks on drop, so this leaves a dead socket file like a kill does.
+        drop(std::os::unix::net::UnixListener::bind(&path).expect("bind dead socket"));
+        assert!(path.exists());
+        let listener = bind_single_instance(&dir).expect("stale socket is replaced");
+        drop(listener);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
     }
 
     #[test]

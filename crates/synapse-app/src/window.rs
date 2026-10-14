@@ -155,8 +155,8 @@ pub fn chat_config() -> (
 ) {
     use secrecy::ExposeSecret as _;
     use synapse_llm::keys::SecretStore as _;
-    let catalog = synapse_llm::Catalog::embedded().ok();
     let store = synapse_store::Store::open(app_dirs::db_path()).ok();
+    let catalog = crate::custom_providers::catalog_with_custom(store.as_ref());
     let mut provider_id = String::new();
     let mut model = String::from("gpt-4o-mini");
     let mut api_key = None;
@@ -220,6 +220,11 @@ pub fn ensure_chat_conversation(store: &synapse_store::Store) -> Option<String> 
     Some(CONVERSATION_ID.into())
 }
 
+/// Open the app database (None when it cannot be opened; callers degrade).
+pub(crate) fn open_store() -> Option<synapse_store::Store> {
+    synapse_store::Store::open(crate::app_dirs::db_path()).ok()
+}
+
 /// Launch the native window. Called from the `synapse` binary; blocks on
 /// the GPUI event loop until explicit quit (tray Quit / Cmd-Ctrl-Q).
 ///
@@ -241,8 +246,10 @@ pub fn launch() {
         read_instance_message, tray_menu_items, OpenEffect, TrayCommand, WindowLifecycle,
         DESTROY_HIDDEN_AFTER_SECS,
     };
-    use gpui_kit::component::button::{Button, ButtonVariants};
-    use gpui_kit::component::input::{InputEvent, InputState};
+
+    use crate::theme_apply::apply_theme;
+    use crate::views::onboarding::OnboardingView;
+    use crate::views::shell::ShellView;
     use gpui_kit::*;
 
     actions!(
@@ -256,96 +263,6 @@ pub fn launch() {
         ]
     );
 
-    struct ShellView {
-        shell: AppShell,
-        chat: Entity<ChatView<synapse_llm::GenaiBackend>>,
-    }
-
-    impl ShellView {
-        fn screen(&self) -> ShellScreen {
-            ShellScreen::describe(&self.shell)
-        }
-    }
-
-    impl Render for ShellView {
-        fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-            let screen = self.screen();
-            let sidebar_visible = self.shell.layout.sidebar.visible;
-            let panel_visible = self.shell.layout.right_panel_visible;
-            div()
-                .flex()
-                .flex_col()
-                .size_full()
-                .child(
-                    // Custom title bar (UI.md §1b): toggles + project + run + palette + inbox.
-                    div()
-                        .flex()
-                        .flex_row()
-                        .items_center()
-                        .gap_2()
-                        .p_2()
-                        .child(
-                            Button::new("sidebar-toggle")
-                                .label(if sidebar_visible {
-                                    "≡ Hide"
-                                } else {
-                                    "≡ Show"
-                                })
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.shell.toggle_sidebar();
-                                    cx.notify();
-                                })),
-                        )
-                        .child(div().child(screen.window_title.clone()))
-                        .child(div().child(run_pill_text(&self.shell)))
-                        .child(Button::new("palette").label("⌘K").on_click(|_, _, _| {}))
-                        .child(div().child(inbox_text(&self.shell)))
-                        .child(
-                            Button::new("panel-toggle")
-                                .label(if panel_visible {
-                                    "◧ Hide"
-                                } else {
-                                    "◧ Show"
-                                })
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.shell.toggle_right_panel();
-                                    cx.notify();
-                                })),
-                        ),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .flex_row()
-                        .flex_1()
-                        .child(div().p_2().child(screen.sidebar_text.clone()))
-                        .child(
-                            div()
-                                .flex_1()
-                                .p_2()
-                                .child(screen.main_text.clone())
-                                .child(self.chat.clone()),
-                        )
-                        .child(div().p_2().child(screen.panel_text.clone())),
-                )
-                .child(
-                    Button::new("theme-cycle")
-                        .label("Theme")
-                        .secondary()
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            let mut a = this.shell.appearance.clone();
-                            a.mode = match a.mode {
-                                crate::theme::ThemeMode::System => crate::theme::ThemeMode::Light,
-                                crate::theme::ThemeMode::Light => crate::theme::ThemeMode::Dark,
-                                crate::theme::ThemeMode::Dark => crate::theme::ThemeMode::System,
-                            };
-                            this.shell.set_appearance(a);
-                            cx.notify();
-                        })),
-                )
-        }
-    }
-
     struct LifecycleHost {
         lifecycle: WindowLifecycle,
         window: Option<AnyWindowHandle>,
@@ -353,13 +270,24 @@ pub fn launch() {
 
     impl Global for LifecycleHost {}
 
+    /// Close button: hide the app and keep the native window alive for reuse
+    /// instead of destroying it (macOS Touch Bar Macs crash inside AppKit when
+    /// an NSWindow is destroyed, see docs/PLATFORM-NOTES.md). Other platforms
+    /// keep the destroy-after-threshold behaviour.
+    fn keep_window_on_close(window: &mut Window, cx: &mut App) {
+        if !crate::platform::CLOSE_HIDES_APP {
+            return;
+        }
+        window.on_window_should_close(cx, |_, cx| {
+            cx.global_mut::<LifecycleHost>().lifecycle.close_window();
+            cx.hide();
+            false
+        });
+    }
+
     struct TrayHandle(gpui_tray::Tray);
 
     impl Global for TrayHandle {}
-
-    fn open_store() -> Option<synapse_store::Store> {
-        synapse_store::Store::open(crate::app_dirs::db_path()).ok()
-    }
 
     /// First window (UI.md §9): the seven-step onboarding wizard for fresh
     /// installs, the normal workspace for returning users.
@@ -373,7 +301,9 @@ pub fn launch() {
                 open_main_window(cx, shell)
             }
             StartupRoute::Onboarding => {
-                let (handle, _) = open_window(WindowOptions::default(), cx, |window, cx| {
+                let options = crate::window_frame::window_options(cx, 880.0, 720.0);
+                let (handle, _) = open_window(options, cx, |window, cx| {
+                    keep_window_on_close(window, cx);
                     cx.new(|cx| OnboardingView::new(window, cx))
                 })
                 .expect("failed to open Synapse onboarding");
@@ -382,589 +312,10 @@ pub fn launch() {
         }
     }
 
-    /// First-launch wizard (UI.md §9): one step at a time with a progress
-    /// row, real inputs for every step, Enter = continue / Esc = back, skip
-    /// on every step, progress persisted after each step (resume after
-    /// restart). Backend detection runs on a worker thread and is polled
-    /// here without ever blocking the UI. On Start, the first project is
-    /// created, the lead introduction posted, and this same window morphs
-    /// into the normal workspace.
-    struct OnboardingView {
-        flow: crate::onboarding::FirstLaunch,
-        name_input: Entity<InputState>,
-        key_input: Entity<InputState>,
-        goal_input: Entity<InputState>,
-        searxng_input: Entity<InputState>,
-        provider: String,
-        status: String,
-        main: Option<(AppShell, Entity<ChatView<synapse_llm::GenaiBackend>>)>,
-        _subs: Vec<Subscription>,
-    }
-
-    impl OnboardingView {
-        fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-            use crate::onboarding::FirstLaunch;
-            let flow = match open_store() {
-                Some(s) => FirstLaunch::open(&s),
-                None => {
-                    let mem = synapse_store::Store::open_in_memory().expect("in-memory store");
-                    FirstLaunch::open(&mem)
-                }
-            };
-            let snap = flow.flow().snapshot().clone();
-            let name_input = cx.new(|cx| {
-                InputState::new(window, cx)
-                    .placeholder("Lead name")
-                    .default_value(snap.lead_name.clone())
-            });
-            let key_input = cx.new(|cx| {
-                InputState::new(window, cx)
-                    .placeholder("API key")
-                    .masked(true)
-            });
-            let goal_input = cx.new(|cx| {
-                InputState::new(window, cx)
-                    .placeholder("What should the team figure out?")
-                    .default_value(snap.project_goal.clone())
-            });
-            let searxng_input = cx.new(|cx| {
-                InputState::new(window, cx)
-                    .placeholder("SearXNG URL (optional)")
-                    .default_value(snap.searxng_url.clone())
-            });
-            let _subs = vec![
-                cx.subscribe_in(&name_input, window, Self::on_name_event),
-                cx.subscribe_in(&goal_input, window, Self::on_goal_event),
-                cx.subscribe_in(&searxng_input, window, Self::on_searxng_event),
-            ];
-            // Backend detection runs off the UI thread; poll it here without
-            // ever waiting on the network (UI.md §9: nothing blocks).
-            flow.start_background_detection(onboarding_detection_probe);
-            cx.spawn(async move |this, cx| {
-                for _ in 0..240 {
-                    cx.background_executor()
-                        .timer(std::time::Duration::from_millis(500))
-                        .await;
-                    let alive = this.update(cx, |this, cx| {
-                        this.poll_detection();
-                        cx.notify();
-                    });
-                    if alive.is_err() {
-                        break;
-                    }
-                }
-            })
-            .detach();
-            Self {
-                flow,
-                name_input,
-                key_input,
-                goal_input,
-                searxng_input,
-                provider: String::from("anthropic"),
-                status: String::new(),
-                main: None,
-                _subs,
-            }
-        }
-
-        fn on_name_event(
-            &mut self,
-            _: &Entity<InputState>,
-            event: &InputEvent,
-            _: &mut Window,
-            cx: &mut Context<Self>,
-        ) {
-            if matches!(event, InputEvent::Change) {
-                let name = self.name_input.read(cx).value().to_string();
-                if let Some(store) = open_store() {
-                    self.flow.set_lead_name(&store, &name);
-                }
-                cx.notify();
-            }
-        }
-
-        fn on_goal_event(
-            &mut self,
-            _: &Entity<InputState>,
-            event: &InputEvent,
-            _: &mut Window,
-            cx: &mut Context<Self>,
-        ) {
-            if matches!(event, InputEvent::Change) {
-                let goal = self.goal_input.read(cx).value().to_string();
-                if let Some(store) = open_store() {
-                    self.flow.set_goal(&store, &goal);
-                }
-                cx.notify();
-            }
-        }
-
-        fn on_searxng_event(
-            &mut self,
-            _: &Entity<InputState>,
-            event: &InputEvent,
-            _: &mut Window,
-            cx: &mut Context<Self>,
-        ) {
-            if matches!(event, InputEvent::Change) {
-                let url = self.searxng_input.read(cx).value().to_string();
-                if let Some(store) = open_store() {
-                    let browser = self.flow.flow().snapshot().browser_connected;
-                    self.flow.set_research(&store, browser, &url);
-                }
-                cx.notify();
-            }
-        }
-
-        fn poll_detection(&mut self) {
-            if let Some(store) = open_store() {
-                self.flow.poll_detection(&store);
-            }
-        }
-
-        fn set_name_chip(&mut self, window: &mut Window, cx: &mut Context<Self>, name: &str) {
-            if let Some(store) = open_store() {
-                self.flow.set_lead_name(&store, name);
-                self.name_input.update(cx, |input, cx| {
-                    input.set_value(name, window, cx);
-                });
-            }
-            cx.notify();
-        }
-
-        fn set_goal_chip(&mut self, window: &mut Window, cx: &mut Context<Self>, goal: &str) {
-            if let Some(store) = open_store() {
-                self.flow.set_goal(&store, goal);
-                self.goal_input.update(cx, |input, cx| {
-                    input.set_value(goal, window, cx);
-                });
-            }
-            cx.notify();
-        }
-
-        fn do_back(&mut self, cx: &mut Context<Self>) {
-            if let Some(store) = open_store() {
-                self.flow.back(&store);
-            }
-            self.status.clear();
-            cx.notify();
-        }
-
-        fn do_skip(&mut self, cx: &mut Context<Self>) {
-            if let Some(store) = open_store() {
-                self.flow.skip(&store);
-            }
-            self.status.clear();
-            cx.notify();
-        }
-
-        /// Enter = continue (or Start on the last step). Persists every move
-        /// so an unfinished flow resumes after restart.
-        fn do_continue(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-            use crate::onboarding::Step;
-            if self.flow.flow().step() == Step::FirstProject {
-                if let Some(store) = open_store() {
-                    match self.flow.complete(&store) {
-                        Ok(done) => {
-                            let project_name = store
-                                .get_project(&done.project_id)
-                                .map(|p| p.name)
-                                .unwrap_or_else(|_| "First project".to_string());
-                            let mut shell = open_persisted_shell();
-                            self.flow.enter_workspace(
-                                &mut shell,
-                                &done.project_id,
-                                &project_name,
-                                true,
-                            );
-                            let (backend, model, persist) = chat_config();
-                            let conversation_id = done.conversation_id.clone();
-                            let chat = cx.new(|cx| {
-                                let mut view =
-                                    ChatView::new(window, cx, backend, model).with_persist(persist);
-                                if let Some(store) = view.persist_store() {
-                                    view.open_conversation(&store, &conversation_id);
-                                }
-                                view
-                            });
-                            self.status.clear();
-                            self.main = Some((shell, chat));
-                        }
-                        Err(e) => {
-                            self.status = e;
-                        }
-                    }
-                }
-            } else if self.flow.can_continue() {
-                if let Some(store) = open_store() {
-                    self.flow.advance(&store);
-                }
-                self.status.clear();
-            } else {
-                self.status = self
-                    .flow
-                    .flow()
-                    .blocked_hint()
-                    .unwrap_or("Not yet — see above.")
-                    .to_string();
-            }
-            cx.notify();
-        }
-
-        /// API-key path: the key itself goes to the OS keychain (never the
-        /// DB); only the live-test flag persists with the flow. Assumed: a
-        /// non-empty key that the keychain accepts counts as tested here;
-        /// the full live model-list check lives in Settings → Providers.
-        fn do_test_key(&mut self, cx: &mut Context<Self>) {
-            use synapse_llm::keys::SecretStore as _;
-            let key = self.key_input.read(cx).value().to_string();
-            if key.trim().is_empty() {
-                self.status = "Paste a key first.".to_string();
-            } else if synapse_llm::keys::KeychainSecretStore
-                .set("provider", &self.provider, key.trim())
-                .is_err()
-            {
-                self.status = "Could not save that key (keychain unavailable).".to_string();
-            } else {
-                if let Some(store) = open_store() {
-                    self.flow
-                        .set_api_result(&store, &self.provider.clone(), true);
-                }
-                self.status = format!("{} key saved ✓", self.provider);
-            }
-            cx.notify();
-        }
-    }
-
-    impl Render for OnboardingView {
-        fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-            use crate::onboarding::{Step, EXAMPLE_GOALS};
-            use gpui_kit::component::button::{Button, ButtonVariants};
-            use gpui_kit::component::input::Input;
-            // Completed: this window is now the normal workspace.
-            if let Some((shell, chat)) = &self.main {
-                let screen = ShellScreen::describe(shell);
-                return div()
-                    .flex()
-                    .flex_col()
-                    .size_full()
-                    .child(div().p_2().child(screen.window_title.clone()))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_row()
-                            .flex_1()
-                            .child(div().p_2().child(screen.sidebar_text.clone()))
-                            .child(div().flex_1().p_2().child(chat.clone())),
-                    );
-            }
-            let step = self.flow.flow().step();
-            let (n, total) = self.flow.flow().progress();
-            let snap = self.flow.flow().snapshot().clone();
-            let can_continue = self.flow.can_continue();
-            let continue_label = if step == Step::FirstProject {
-                "Start"
-            } else {
-                "Continue"
-            };
-            let mut col = div()
-                .flex()
-                .flex_col()
-                .size_full()
-                .p_4()
-                .gap_3()
-                .on_key_down(
-                    cx.listener(|this: &mut Self, event: &KeyDownEvent, window, cx| {
-                        let key: &str = &event.keystroke.key;
-                        match key {
-                            "enter" => this.do_continue(window, cx),
-                            "escape" => this.do_back(cx),
-                            _ => {}
-                        }
-                    }),
-                )
-                .child(div().child(format!("Step {n}/{total}")))
-                .child(div().child(step.title().to_string()));
-            match step {
-                Step::Hello => {
-                    col = col
-                        .child(
-                            div().child("Your research team lives here. One question at a time."),
-                        )
-                        .child(
-                            Button::new("ob-import")
-                                .label("I've used Synapse before → skip")
-                                .secondary()
-                                .on_click(cx.listener(|this, _, _, cx| this.do_skip(cx))),
-                        );
-                }
-                Step::LeadName => {
-                    col =
-                        col.child(Input::new(&self.name_input)).child(
-                            div()
-                                .flex()
-                                .flex_row()
-                                .gap_2()
-                                .child(Button::new("ob-name-dottie").label("Dottie").on_click(
-                                    cx.listener(|this, _, window, cx| {
-                                        this.set_name_chip(window, cx, "Dottie");
-                                    }),
-                                ))
-                                .child(Button::new("ob-name-mira").label("Mira").on_click(
-                                    cx.listener(|this, _, window, cx| {
-                                        this.set_name_chip(window, cx, "Mira");
-                                    }),
-                                ))
-                                .child(Button::new("ob-name-zara").label("Zara").on_click(
-                                    cx.listener(|this, _, window, cx| {
-                                        this.set_name_chip(window, cx, "Zara");
-                                    }),
-                                )),
-                        );
-                }
-                Step::LeadLook => {
-                    let look = format!(
-                        "{} · {} · {} {}",
-                        snap.shape, snap.palette, snap.eyes, snap.accessory
-                    );
-                    col = col.child(div().child(look)).child(
-                        div()
-                            .flex()
-                            .flex_row()
-                            .gap_2()
-                            .child(Button::new("ob-shape-bean").label("bean").on_click(
-                                cx.listener(|this, _, _, cx| {
-                                    if let Some(store) = open_store() {
-                                        let s = this.flow.flow().snapshot().clone();
-                                        this.flow.set_look(
-                                            &store,
-                                            "bean",
-                                            &s.palette,
-                                            &s.eyes,
-                                            &s.accessory,
-                                        );
-                                    }
-                                    cx.notify();
-                                }),
-                            ))
-                            .child(Button::new("ob-shape-round").label("round").on_click(
-                                cx.listener(|this, _, _, cx| {
-                                    if let Some(store) = open_store() {
-                                        let s = this.flow.flow().snapshot().clone();
-                                        this.flow.set_look(
-                                            &store,
-                                            "round",
-                                            &s.palette,
-                                            &s.eyes,
-                                            &s.accessory,
-                                        );
-                                    }
-                                    cx.notify();
-                                }),
-                            ))
-                            .child(
-                                Button::new("ob-surprise")
-                                    .label("Surprise me")
-                                    .secondary()
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        if let Some(store) = open_store() {
-                                            // Deterministic shuffle from the name so it is
-                                            // stable across restarts, bounced by the view.
-                                            let n: usize = this
-                                                .flow
-                                                .flow()
-                                                .snapshot()
-                                                .lead_name
-                                                .bytes()
-                                                .map(|b| b as usize)
-                                                .sum::<usize>()
-                                                + this.flow.flow().snapshot().skipped.len();
-                                            let shapes = ["bean", "round", "pear", "cloud", "drop"];
-                                            let palettes = ["green", "amber", "violet", "blue"];
-                                            this.flow.set_look(
-                                                &store,
-                                                shapes[n % shapes.len()],
-                                                palettes[(n / shapes.len()) % palettes.len()],
-                                                "diamond",
-                                                "",
-                                            );
-                                        }
-                                        cx.notify();
-                                    })),
-                            ),
-                    );
-                }
-                Step::Brains => {
-                    let found = format!(
-                        "Found: {} CLIs ({} logged in), {} local models{}",
-                        snap.detection.cli_agents.len(),
-                        snap.detection
-                            .cli_agents
-                            .iter()
-                            .filter(|c| c.logged_in)
-                            .count(),
-                        snap.detection.local_models.len(),
-                        if snap.detection.done {
-                            ""
-                        } else {
-                            " — still looking…"
-                        }
-                    );
-                    col = col
-                        .child(div().child(found))
-                        .child(Input::new(&self.key_input))
-                        .child(
-                            div()
-                                .flex()
-                                .flex_row()
-                                .gap_2()
-                                .child(
-                                    Button::new("ob-key-test")
-                                        .label("Save key & test")
-                                        .on_click(
-                                            cx.listener(|this, _, _, cx| this.do_test_key(cx)),
-                                        ),
-                                )
-                                .child(
-                                    Button::new("ob-backend-keyless")
-                                        .label("Try free, no keys")
-                                        .secondary()
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            if let Some(store) = open_store() {
-                                                this.flow.set_brains_backend(&store, "keyless");
-                                            }
-                                            cx.notify();
-                                        })),
-                                ),
-                        );
-                    if !can_continue {
-                        col = col.child(
-                            div().child(
-                                self.flow
-                                    .flow()
-                                    .blocked_hint()
-                                    .unwrap_or("Still looking…")
-                                    .to_string(),
-                            ),
-                        );
-                    }
-                }
-                Step::Research => {
-                    let browser = if snap.browser_connected {
-                        "Browser connected ✓"
-                    } else {
-                        "Browser not connected (keyless search already works)"
-                    };
-                    col = col
-                        .child(div().child(browser.to_string()))
-                        .child(Input::new(&self.searxng_input))
-                        .child(
-                            Button::new("ob-browser-toggle")
-                                .label(if snap.browser_connected {
-                                    "Disconnect browser"
-                                } else {
-                                    "Connect browser"
-                                })
-                                .secondary()
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    if let Some(store) = open_store() {
-                                        let s = this.flow.flow().snapshot().clone();
-                                        this.flow.set_research(
-                                            &store,
-                                            !s.browser_connected,
-                                            &s.searxng_url,
-                                        );
-                                    }
-                                    cx.notify();
-                                })),
-                        );
-                }
-                Step::Team => {
-                    let mut row = div().flex().flex_row().gap_2();
-                    for t in synapse_core::builtin_templates() {
-                        let id = t.id.clone();
-                        let label = t.name.clone();
-                        let btn_id = format!("ob-template-{}", t.id);
-                        row = row.child(Button::new(btn_id).label(label).secondary().on_click(
-                            cx.listener(move |this, _, _, cx| {
-                                if let Some(store) = open_store() {
-                                    this.flow.set_template(&store, &id);
-                                }
-                                cx.notify();
-                            }),
-                        ));
-                    }
-                    col = col
-                        .child(div().child(format!("Team: {}", self.flow.flow().template_name())))
-                        .child(row);
-                }
-                Step::FirstProject => {
-                    let mut chips = div().flex().flex_row().gap_2();
-                    for (i, goal) in EXAMPLE_GOALS.iter().enumerate() {
-                        let g = goal.to_string();
-                        chips = chips.child(
-                            Button::new(format!("ob-goal-{i}"))
-                                .label(g.clone())
-                                .secondary()
-                                .on_click(cx.listener(move |this, _, window, cx| {
-                                    this.set_goal_chip(window, cx, &g.clone());
-                                })),
-                        );
-                    }
-                    col =
-                        col.child(Input::new(&self.goal_input))
-                            .child(chips)
-                            .child(div().child(
-                                "Keep Synapse in the menu bar: toggle after the first run starts.",
-                            ));
-                }
-            }
-            if !self.status.is_empty() {
-                col = col.child(div().child(self.status.clone()));
-            }
-            col.child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .gap_2()
-                    .child(
-                        Button::new("ob-back")
-                            .label("Back (Esc)")
-                            .secondary()
-                            .on_click(cx.listener(|this, _, _, cx| this.do_back(cx))),
-                    )
-                    .child(
-                        Button::new("ob-skip")
-                            .label("Skip")
-                            .secondary()
-                            .on_click(cx.listener(|this, _, _, cx| this.do_skip(cx))),
-                    )
-                    .child(if can_continue || step == Step::FirstProject {
-                        Button::new("ob-continue")
-                            .label(continue_label)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.do_continue(window, cx);
-                            }))
-                    } else {
-                        Button::new("ob-continue-disabled")
-                            .label(continue_label)
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.status = this
-                                    .flow
-                                    .flow()
-                                    .blocked_hint()
-                                    .unwrap_or("Not yet — see above.")
-                                    .to_string();
-                                cx.notify();
-                            }))
-                    }),
-            )
-        }
-    }
-
     fn open_main_window(cx: &mut App, shell: AppShell) -> AnyWindowHandle {
-        let (handle, _) = open_window(WindowOptions::default(), cx, |window, cx| {
+        let options = crate::window_frame::window_options(cx, 1280.0, 820.0);
+        let (handle, _) = open_window(options, cx, |window, cx| {
+            keep_window_on_close(window, cx);
             let (backend, model, persist) = chat_config();
             let chat = cx.new(|cx| {
                 let mut view = ChatView::new(window, cx, backend, model).with_persist(persist);
@@ -975,7 +326,7 @@ pub fn launch() {
                 }
                 view
             });
-            cx.new(|_| ShellView { shell, chat })
+            cx.new(|cx| ShellView::new(shell, chat, cx))
         })
         .expect("failed to open Synapse window");
         handle
@@ -1072,28 +423,13 @@ pub fn launch() {
     /// Tray dot colour per icon state: idle blue, working green,
     /// needs-you amber. Toolkit-free state lives in `lifecycle`.
     fn tray_icon_for(state: crate::lifecycle::TrayIconState) -> gpui_tray::Result<gpui_tray::Icon> {
-        let rgb = match state {
-            crate::lifecycle::TrayIconState::Idle => [45, 105, 220],
-            crate::lifecycle::TrayIconState::Working => [46, 160, 90],
-            crate::lifecycle::TrayIconState::NeedsYou => [220, 140, 30],
+        let dot = match state {
+            crate::lifecycle::TrayIconState::Idle => None,
+            crate::lifecycle::TrayIconState::Working => Some([46, 160, 90]),
+            crate::lifecycle::TrayIconState::NeedsYou => Some([220, 140, 30]),
         };
-        tray_dot_icon(rgb)
-    }
-
-    fn tray_dot_icon(rgb: [u8; 3]) -> gpui_tray::Result<gpui_tray::Icon> {
-        const SIZE: u32 = 32;
-        let mut rgba = vec![0_u8; (SIZE * SIZE * 4) as usize];
-        for y in 0..SIZE {
-            for x in 0..SIZE {
-                let offset = ((y * SIZE + x) * 4) as usize;
-                let dx = x as i32 - 16;
-                let dy = y as i32 - 16;
-                if dx * dx + dy * dy <= 14 * 14 {
-                    rgba[offset..offset + 4].copy_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
-                }
-            }
-        }
-        gpui_tray::Icon::from_rgba(rgba, SIZE, SIZE)
+        let px = crate::brand_mark::TRAY_PX;
+        gpui_tray::Icon::from_rgba(crate::brand_mark::tray_rgba(dot), px, px)
     }
 
     fn tray_icon() -> gpui_tray::Result<gpui_tray::Icon> {
@@ -1135,10 +471,14 @@ pub fn launch() {
     }
 
     application()
+        .with_assets(crate::app_assets::AppAssets)
         .with_quit_mode(QuitMode::Explicit)
         .run(move |cx| {
             use futures::StreamExt as _;
             init(cx);
+            crate::app_assets::register_fonts(cx);
+            crate::views::shell::bind_keys(cx);
+            apply_theme(cx, &open_persisted_shell().appearance);
             cx.set_quit_mode(QuitMode::Explicit);
             cx.set_global(LifecycleHost {
                 lifecycle: WindowLifecycle::new_visible(),
@@ -1167,8 +507,9 @@ pub fn launch() {
             cx.global_mut::<LifecycleHost>().window = Some(handle);
             // Close hides: Explicit quit mode keeps the app alive; record the
             // hidden state and destroy it after the threshold (frees GPU).
-            // GPUI gives no close-interception hook, so a closed native window
-            // is rebuilt from the store on the next open (tray/dock/IPC).
+            // Where close is not intercepted (see `keep_window_on_close`), a
+            // closed native window is rebuilt from the store on the next open
+            // (tray/dock/IPC).
             // (`Subscription` deactivates on drop; the app owns this observer
             // for its whole lifetime, so it is intentionally forgotten.)
             std::mem::forget(cx.on_window_closed(|cx: &mut App, _id| {

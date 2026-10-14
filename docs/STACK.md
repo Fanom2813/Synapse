@@ -15,7 +15,7 @@ component list and examples, and on crates.io. Writing it ourselves is the last 
 | Components | GPUI Kit: chat message/bubble/scroller, markdown (streaming, word fade-in; see its `stream-markdown` example), code editor + tree-sitter, dock/tabs/resizable panels, sidebar, dialogs/sheets, toasts, forms/settings, command palette, virtual list/table, charts, skeleton/shimmer, animation (spring/keyframes/stagger), theme | Enable only needed tree-sitter languages (rust, python, js/ts, json, bash, markdown). |
 | Faster renderer (optional) | GPUI Kit feature `gpui-fast` behind our cargo feature `fast` | Retained-mode fork; experimental. Benchmark both (PERFORMANCE.md). |
 | Fonts | Bricolage Grotesque, Atkinson Hyperlegible Next + Mono, Newsreader (all OFL, google/fonts) | Subset at build time; see UI.md §6. |
-| Icons | Phosphor Icons (MIT) replacing GPUI Kit's default Lucide set | Only the icons we use; see UI.md §7. |
+| Icons | GPUI Kit's built-in Lucide set (no second icon set) | Names live in `synapse-app/src/icons.rs`; extras beyond the kit's 101 are embedded via `app_assets::ExtraIcons`. |
 | Perf overlay | `gpui-fps` (from the kit) | Dev builds only, toggle with a hidden shortcut. |
 | Tray | `gpui-tray = "0.1"` with features `gpui-kit`, `menu-state` | Runs on GPUI's loop, no GTK. Fallback: `tray-icon` 0.26 + `muda` (KSNI backend on Linux). |
 | Global hotkey | `global-hotkey = "0.8"` | Wayland: XDG GlobalShortcuts portal via `ashpd`. |

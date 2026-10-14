@@ -8,6 +8,7 @@
 
 use crate::empty::{self, EmptyState};
 use crate::layout::{DockLayout, LayoutStore, PanelTab};
+use crate::navigation::{AppScreen, Navigator, SettingsSection};
 use crate::theme::Appearance;
 use crate::titlebar::{RunPill, TitleBar};
 use std::io;
@@ -55,25 +56,6 @@ impl ShellPersist {
     }
 }
 
-/// Reachable top-level screens in the main window (navigable via the
-/// sidebar / command palette). The Settings → Providers screen is a real
-/// destination, not a placeholder: the window renders it when selected.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum AppScreen {
-    #[default]
-    Room,
-    ProvidersSettings,
-}
-
-impl AppScreen {
-    pub fn title(self) -> &'static str {
-        match self {
-            Self::Room => "Team room",
-            Self::ProvidersSettings => "Settings · Providers",
-        }
-    }
-}
-
 /// A project as far as the shell cares: id + display name + goal.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShellProject {
@@ -91,7 +73,7 @@ pub struct AppShell {
     pub title: TitleBar,
     pub projects: Vec<ShellProject>,
     pub open_project_id: Option<String>,
-    pub screen: AppScreen,
+    pub nav: Navigator,
     persist: Option<ShellPersist>,
 }
 
@@ -106,7 +88,7 @@ impl AppShell {
             title: TitleBar::default(),
             projects: Vec::new(),
             open_project_id: None,
-            screen: AppScreen::Room,
+            nav: Navigator::default(),
             persist: None,
         }
     }
@@ -197,18 +179,28 @@ impl AppShell {
         self.title.apply_run_action(RunAction::Stop)
     }
 
-    /// Navigate to the Settings → Providers screen (sidebar / palette).
-    pub fn open_providers_settings(&mut self) {
-        self.screen = AppScreen::ProvidersSettings;
+    /// The screen the main area shows.
+    pub fn screen(&self) -> AppScreen {
+        self.nav.current()
     }
 
-    /// Navigate back to the team room.
+    /// Navigate to a settings page (sidebar, palette, Cmd/Ctrl-,).
+    pub fn open_settings(&mut self, section: SettingsSection) {
+        self.nav.go(AppScreen::Settings(section));
+    }
+
+    /// Navigate to the team room.
     pub fn open_room(&mut self) {
-        self.screen = AppScreen::Room;
+        self.nav.go(AppScreen::Room);
+    }
+
+    /// Back to the previous screen (Esc, back button); false when there is none.
+    pub fn go_back(&mut self) -> bool {
+        self.nav.go_back()
     }
 
     pub fn is_providers_settings_open(&self) -> bool {
-        self.screen == AppScreen::ProvidersSettings
+        self.screen() == AppScreen::Settings(SettingsSection::Providers)
     }
 
     /// Empty state for the sidebar (no projects at all).
@@ -331,13 +323,15 @@ mod tests {
     }
 
     #[test]
-    fn shell_navigates_to_providers_settings_and_back() {
+    fn shell_navigates_to_settings_pages_and_back() {
         let mut shell = AppShell::open();
-        assert_eq!(shell.screen, AppScreen::Room);
-        assert!(!shell.is_providers_settings_open());
-        shell.open_providers_settings();
+        assert_eq!(shell.screen(), AppScreen::Room);
+        shell.open_settings(SettingsSection::Providers);
         assert!(shell.is_providers_settings_open());
-        assert_eq!(shell.screen.title(), "Settings · Providers");
+        shell.open_settings(SettingsSection::Appearance);
+        assert_eq!(shell.screen().title(), "Appearance");
+        assert!(shell.go_back());
+        assert!(shell.is_providers_settings_open());
         shell.open_room();
         assert!(!shell.is_providers_settings_open());
     }

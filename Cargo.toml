@@ -87,6 +87,15 @@ memory-stats = "1"
 insta = "1"
 wiremock = "0.6"
 
+# Dev builds: GPUI, text shaping and SVG rendering are far too slow unoptimised
+# (lists stutter while typing). Dependencies build optimised once and stay
+# cached; our own crates keep fast incremental, debuggable builds.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
 [profile.release]
 opt-level = 3
 lto = "fat"

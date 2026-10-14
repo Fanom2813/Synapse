@@ -30,7 +30,7 @@ must be justified against these numbers.
   crates (reqwest, hyper, tokio, rustls, serde_json, image).
 - Fonts: only the four subset variable fonts from UI.md §6 (≤ 700 KB total); no other bundled fonts.
   No bundled Chromium, no ONNX runtime, no ICU data.
-- Assets: SVG over PNG; avatars are SVG; icons: only the Phosphor SVGs we use (UI.md §7), never two icon sets; the models.dev snapshot is
+- Assets: SVG over PNG; avatars are SVG; icons: only the Lucide SVGs we use (UI.md §7), never two icon sets; the models.dev snapshot is
   trimmed to the fields we use and gz-compressed; tree-sitter grammars only for the languages listed in STACK.md.
 - Downloaded on first use instead of bundled: the embeddings model (model2vec), DiceBear avatar packs beyond
   the default set, persona collections, MCP servers, ACP adapters.

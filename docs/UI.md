@@ -40,7 +40,7 @@ each platform).
 ```
 
 Left → right (macOS order; Windows/Linux mirror the window buttons only):
-1. **Sidebar toggle** (Phosphor `sidebar`; Cmd/Ctrl-B).
+1. **Sidebar toggle** (Lucide `panel-left`; Cmd/Ctrl-B).
 2. **Project switcher**: current project name + chevron; click opens a searchable popover of projects
    (recent first, "New project" at the bottom, Cmd/Ctrl-N). The title cross-fades when switching.
 3. **Run pill** (centre, the heart of the frame): mode icon + current phase + progress, and a stack of the
@@ -191,7 +191,7 @@ Kit's animation helpers (springs, keyframes, stagger); read their docs for the p
 - Toasts slide in from the bottom-right, auto-dismiss with a draining progress line; OS notifications when unfocused.
 - Success moments (run finished, agent created): the lead avatar does a small celebratory bounce + confetti of
   3–5 tiny dots in the avatar's colour (≤ 600 ms, once, skipped with reduce motion).
-- Empty states: duotone Phosphor illustration + gentle avatar idle; one clear primary action.
+- Empty states: Lucide illustration in a soft badge + gentle avatar idle; one clear primary action.
 
 ## 6. Typography
 
@@ -207,6 +207,23 @@ in About → Credits), variable fonts from github.com/google/fonts (`ofl/<family
 | **Reports & artifacts**: synthesis, research reports, long findings in the Artifact panel and exports | **Newsreader** (variable: optical size, weight, italic; Production Type) | An editorial serif made for on-screen reading: research output reads like a publication, clearly separate from the chatter. |
 | **Code, data, tool calls, citations ids, numbers in tables** | **Atkinson Hyperlegible Mono** (variable weight + italic) | Same family as the UI font, so chat and code sit together in harmony; legible digits for costs, tokens and data. |
 
+Roles (code: `theme::TextRole`, applied with `Typography::typeset`; views never set raw sizes or weights):
+
+| Role | Size / leading | Font · weight | Use |
+|---|---|---|---|
+| Display | 32 / 1.15 | Bricolage · 800 | onboarding, hero moments |
+| Title | 20 / 1.25 | Bricolage · 600 | page titles |
+| Heading | 16 / 1.3 | Atkinson · 500 | card titles, breadcrumb |
+| Body | 14 / 1.5 | Atkinson · 400 | messages, reading text |
+| Label | 13 / 1.3 | Atkinson · 500 | controls, nav rows, setting names |
+| Caption | 12 / 1.4 | Atkinson · 400 | hints, metadata, counts |
+| Overline | 12 / 1.3 | Atkinson · 700 | section labels (PROJECTS) |
+| Mono | 13 / 1.5 | Atkinson Mono · 400 | code, tool calls, ids |
+
+Dark theme adds 0.05 to every leading (light text looks thinner). Numbers that change or line up (costs, counts,
+percentages) use tabular figures (`.figures()`). GPUI has no letter-spacing, so none is used. All sizes scale with
+the Settings → Appearance text-size setting.
+
 Rules:
 - Type scale (px): 12 · 13 · **14 (body/chat)** · 16 · 20 · 24 · 32 · 48. Line height 1.5 for chat and reports,
   1.25 for UI controls. Reports: max line length ~72 characters.
@@ -221,26 +238,19 @@ Rules:
 
 ## 7. Icons
 
-**Phosphor Icons** (MIT, phosphor-icons): ~1,500 icons on a 256 grid with six weights (thin, light,
-regular, bold, fill, duotone). Not Lucide, which GPUI Kit ships by default and most apps use.
-Why it fits: Phosphor's soft, slightly rounded geometry matches the blob avatars, and its weights give a built-in
-state language:
-- **regular** for UI chrome (toolbar, menus, sidebar);
-- **fill** for the active/selected state (current tab, toggled tool);
-- **duotone** for empty states, onboarding and feature cards (the friendly, illustrated side);
-- **bold** at 12–14 px where regular gets thin.
+**GPUI Kit's built-in Lucide set** (ISC), the one icon set; no second set is bundled. (Decision 2026-10-14: we
+first planned Phosphor, then chose the kit's own icons for zero extra assets and native component support.)
 
 Rules:
-- Use only the icons we need: `scripts/sync-icons` copies a list (`assets/icons/icons.toml`, name → weight)
-  of SVGs into `assets/icons/phosphor/`; nothing else is bundled. Render with GPUI's `svg()` (monochrome,
-  tinted by theme colour); duotone uses the SVG's own opacity layer.
-- Map GPUI Kit's `IconName`s to Phosphor where the kit allows custom icon assets (follow GPUI Kit's docs for
-  overriding its asset source); never ship both Lucide and Phosphor.
-- Semantic icons for message kinds (UI.md §3) are fixed: Ask = chat-circle-dots, Challenge = lightning,
-  Agree = check-circle, Refuse = prohibit, Delegate = arrow-bend-up-right, Finding = magnifying-glass-plus,
-  Propose = lightbulb, Vote = hand-pointing, Steer = steering-wheel, NeedUser = hand-waving, Done = flag-checkered.
-  (Check each exists in the pinned Phosphor version; pick the nearest if renamed.)
-- Role badges on avatars use Microsoft Fluent Emoji 3D (MIT) as in §4, not Phosphor, so they read as character, not UI.
+- Every icon we use is named once in `synapse-app/src/icons.rs`; views import from there, never pick ad hoc.
+- GPUI Kit ships 101 icons by default. Others we need are embedded by name through
+  `app_assets::ExtraIcons` (`icon_assets!`), which embeds only the SVGs listed (~1 KB each).
+- Render with GPUI Kit's `Icon` / `Button::icon`; colour comes from the theme (no hard-coded fills).
+- Lucide has one weight: show the active/selected state with colour or a filled background, not a weight swap.
+- Semantic icons for message kinds (UI.md §3) are fixed in `icons.rs`: Ask = message-circle-more,
+  Challenge = zap, Agree = circle-check, Refuse = ban, Delegate = corner-up-right, Finding = search,
+  Propose = lightbulb, Steer = waypoints, NeedUser = hand, Done = flag.
+- Role badges on avatars use Microsoft Fluent Emoji 3D (MIT) as in §4, not the icon set, so they read as character, not UI.
 
 ## 8. Themes
 
@@ -249,7 +259,7 @@ the same in both themes. Fonts: system UI font + a monospace for code.
 
 ## 9. Onboarding (first launch, under 2 minutes)
 
-A single window, full-bleed, no title-bar clutter (only window controls), one step at a time with a
+A single window, full-bleed, no title-bar clutter (only window controls), five steps, one at a time with a
 progress row of small dots at the top. Every step: one question, big friendly visuals, keyboard-first
 (Enter = continue, Esc = back), skippable, and **resumable** (state saved after each step). Transitions
 between steps slide horizontally with `emphasized` + stagger for the choices. Nothing blocks on the network:
@@ -261,19 +271,25 @@ detection runs in the background from the first frame.
    (looks at the caret, nods on Enter).
 3. **Its look**: avatar editor carousel: shape, colour, eyes, accessory; "Surprise me" shuffles with a bounce.
    Live preview large in the centre.
-4. **Brains** (how agents think), pre-filled from background detection, shown as cards that appear as they are found:
+4. **Brains** (how agents think), pre-filled from background detection:
    - "Found on this computer": Claude Code / Codex / Gemini CLI / OpenCode (logged in ✓), Ollama / LM Studio models.
-   - "Add an API key": provider picker (search the catalog) → key field → live "Testing…" → ✓ with the model list.
-   - "Try free, no keys": local model or logged-in CLI + keyless research (shows what is needed if nothing is found).
-   At least one must work to continue; otherwise the step explains the simplest option for this OS.
-5. **Research** (optional, collapsed by default): connect the user's browser (§DEEP-RESEARCH 2b), SearXNG URL,
-   or search keys. Default keyless search already works, so this is "Make research stronger (optional)".
-6. **Your team**: choose a template (Research squad, Product brainstorm, Investment analysis, Custom); the
-   team's avatars pop in one by one with names and roles; tap one to swap the persona.
-7. **First project**: goal input with 3 example chips ("Is there a market for X in Uganda?", ...). Press Start:
-   the window expands into the main layout (onboarding card morphs into the project view), the lead
-   **introduces itself and the team** in the room, then starts the run (or waits if the user prefers).
-   Optional: "Keep Synapse in the menu bar/tray" toggle and hotkey hint shown as a toast after the first run starts.
+   - **Providers**: a small "Add custom" button opens a popup (provider list searchable from the catalog, or
+     "Custom endpoint…" for any OpenAI-compatible server; API key; **Add**, **Add more**, **Close**). Added
+     providers are listed below in a scrolling list, each removable. The first one also becomes the lead's model.
+   At least one backend must work to continue; otherwise the step explains the simplest option for this OS.
+5. **All set**: one line on who leads the team and what is connected. Press Start: the window expands into
+   the main layout, a "First project" room opens with the default Research squad, and the lead introduces
+   itself and asks what to look into. Team template, research options and goals are chosen later, in the room
+   and in Settings.
 
 Measure: time-to-first-run from launch ≤ 2 min for a user with one key or one logged-in CLI (acceptance test
 uses mocks and asserts the number of steps and that nothing waits on network).
+
+## 10. Brand mark
+
+Three bean agents with diamond eyes: a green lead (`#34d27b`, the default avatar colour) and two specialists
+(blue `#3d9df2` = default accent, amber `#f5a524`). Source art is in `assets/brand/` (`synapse-mark.svg` colour,
+`synapse-tile.svg` app-icon tile, `synapse-mark-mono.svg` single colour). `scripts/gen-icons` renders the installer
+icons and the tray bitmap from it. In the app the mark is drawn with `brand_mark::mark` (an `img` of the embedded SVG,
+so it keeps its colours); it appears at the top of the sidebar and on the first onboarding step. The tray icon is the
+mark, with a green dot while a run works and an amber dot when an agent needs the user.

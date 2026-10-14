@@ -563,13 +563,16 @@ impl ChatState {
 
 // ---- GPUI view (virtualised list + streaming markdown + composer) ----
 
+use crate::theme::TextRole;
+use crate::typography::Typography as _;
 use gpui_kit::component::button::Button;
+use gpui_kit::component::button::ButtonVariants as _;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::message_scroller::{MessageScroller, MessageScrollerState};
 use gpui_kit::component::text::TextView;
-use gpui_kit::component::v_flex;
+use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _};
 use gpui_kit::{
-    div, App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render,
+    div, px, App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render,
     Styled as _, Subscription, Window,
 };
 
@@ -760,36 +763,93 @@ where
             .map(|m| m.author.clone())
             .collect();
         let send_label = self.state.send_label().to_string();
+        let running = self.state.is_running();
         let cost_label = self.state.conversation_cost().header_label();
         let error = self.state.last_error().map(str::to_string);
 
-        let mut column =
-            v_flex()
-                .size_full()
-                .child(div().child(cost_label))
-                .child(div().flex_1().child(MessageScroller::new(
-                    "chat-view-scroller",
-                    self.scroller.clone(),
-                    move |ix, _window: &mut Window, _cx: &mut App| {
-                        let body = bodies.get(ix).cloned().unwrap_or_default();
-                        let author = authors.get(ix).cloned().unwrap_or_default();
-                        v_flex().child(div().child(author)).child(
-                            TextView::markdown(format!("chat-msg-{ix}"), body)
-                                .stream_fade(true)
-                                .code_block_actions(|_block, _, _| div()),
-                        )
-                    },
-                )));
+        let theme = cx.theme().clone();
+        let muted = theme.colors.muted_foreground;
+        let (bubble_bg, radius_lg) = (theme.colors.muted, theme.radius_lg);
+
+        let mut column = v_flex().size_full().gap_2().child(
+            div()
+                .typeset(TextRole::Caption, cx)
+                .figures()
+                .text_color(muted)
+                .child(cost_label),
+        );
+        column = column.child(div().flex_1().min_h_0().child(MessageScroller::new(
+            "chat-view-scroller",
+            self.scroller.clone(),
+            move |ix, _window: &mut Window, app: &mut App| {
+                let body = bodies.get(ix).cloned().unwrap_or_default();
+                let author = authors.get(ix).cloned().unwrap_or_default();
+                let is_user = author == "You";
+                let text = TextView::markdown(format!("chat-msg-{ix}"), body)
+                    .stream_fade(true)
+                    .code_block_actions(|_block, _, _| div());
+                let content = v_flex()
+                    .gap_1()
+                    .max_w(px(680.0))
+                    .child(
+                        div()
+                            .typeset(TextRole::Label, app)
+                            .text_color(muted)
+                            .child(author),
+                    )
+                    .child(if is_user {
+                        div()
+                            .px_3()
+                            .py_2()
+                            .rounded(radius_lg)
+                            .bg(bubble_bg)
+                            .child(text)
+                    } else {
+                        div().child(text)
+                    });
+                let row = h_flex().w_full().py_2();
+                if is_user {
+                    row.justify_end().child(content)
+                } else {
+                    row.child(content)
+                }
+            },
+        )));
         if let Some(message) = error {
-            column = column.child(div().child(format!("Error: {message}")));
+            column = column.child(
+                div()
+                    .px_3()
+                    .py_2()
+                    .rounded(theme.radius)
+                    .border_1()
+                    .border_color(theme.colors.danger)
+                    .typeset(TextRole::Label, cx)
+                    .text_color(theme.colors.danger)
+                    .child(format!("Error: {message}")),
+            );
         }
         column.child(
-            div()
-                .flex()
-                .flex_row()
-                .child(div().flex_1().child(Input::new(&self.composer)))
+            h_flex()
+                .items_end()
+                .gap_2()
+                .p_2()
+                .rounded(radius_lg)
+                .border_1()
+                .border_color(theme.colors.border)
+                .bg(theme.colors.sidebar)
+                .child(
+                    div()
+                        .flex_1()
+                        .child(Input::new(&self.composer).appearance(false)),
+                )
                 .child(
                     Button::new("chat-send-stop")
+                        .primary()
+                        .icon(if running {
+                            crate::icons::STOP
+                        } else {
+                            crate::icons::SEND
+                        })
                         .label(send_label)
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.on_send_click(window, cx);

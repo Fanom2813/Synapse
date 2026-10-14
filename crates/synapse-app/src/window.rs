@@ -476,7 +476,11 @@ pub fn launch() {
 /// Run-pill line for the title bar (mode + phase, or "Start a run").
 /// Paused runs prefix "Paused · "; narrow windows shrink to icon + avatars.
 pub fn run_pill_text(shell: &AppShell) -> String {
-    if shell.title.layout_for_width(window_width_hint()).compact_run_pill {
+    if shell
+        .title
+        .layout_for_width(window_width_hint())
+        .compact_run_pill
+    {
         return compact_run_pill_text(shell);
     }
     shell.title.run_label()
@@ -505,7 +509,11 @@ pub fn compact_run_pill_text(shell: &AppShell) -> String {
 /// Width hint for headless layout decisions (real view passes the window
 /// width instead). Narrow enough that tests exercise the overflow path.
 fn window_width_hint() -> f32 {
-    if cfg!(test) { 1280.0 } else { 1280.0 }
+    if cfg!(test) {
+        1280.0
+    } else {
+        1280.0
+    }
 }
 
 /// Run popover body: phase timeline + budget + available actions.

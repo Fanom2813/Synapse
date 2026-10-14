@@ -17,6 +17,7 @@ pub mod settings;
 pub mod settings_providers;
 pub mod shell;
 pub mod skill_library;
+pub mod team_room;
 pub mod theme;
 pub mod titlebar;
 pub mod window;

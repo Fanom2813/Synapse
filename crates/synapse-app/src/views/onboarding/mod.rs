@@ -2,7 +2,7 @@
 //! per-step card is drawn in `steps`.
 
 mod detected;
-mod provider_dialog;
+pub(crate) mod provider_dialog;
 mod provider_list;
 mod steps;
 

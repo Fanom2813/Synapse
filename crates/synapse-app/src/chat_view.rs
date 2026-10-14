@@ -567,10 +567,10 @@ use crate::theme::TextRole;
 use crate::typography::Typography as _;
 use gpui_kit::component::button::Button;
 use gpui_kit::component::button::ButtonVariants as _;
-use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::input::{InputEvent, Textarea, TextareaState};
 use gpui_kit::component::message_scroller::{MessageScroller, MessageScrollerState};
 use gpui_kit::component::text::TextView;
-use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _};
+use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, Disableable as _};
 use gpui_kit::{
     div, px, App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render,
     Styled as _, Subscription, Window,
@@ -603,7 +603,7 @@ pub struct ChatPersist {
 pub struct ChatView<B> {
     state: ChatState,
     scroller: Entity<MessageScrollerState>,
-    composer: Entity<InputState>,
+    composer: Entity<TextareaState>,
     backend: std::sync::Arc<B>,
     model: String,
     persist: ChatPersist,
@@ -621,7 +621,12 @@ where
         model: impl Into<String>,
     ) -> Self {
         let scroller = cx.new(|cx| MessageScrollerState::new(0, cx));
-        let composer = cx.new(|cx| InputState::new(window, cx).placeholder("Message the agent…"));
+        let composer = cx.new(|cx| {
+            TextareaState::new(window, cx)
+                .auto_grow(1, 8)
+                .submit_on_enter(true)
+                .placeholder("Message the agent…")
+        });
         let composer_sub = cx.subscribe_in(&composer, window, Self::on_composer_event);
         Self {
             state: ChatState::new(),
@@ -666,15 +671,20 @@ where
 
     fn on_composer_event(
         &mut self,
-        _: &Entity<InputState>,
+        _: &Entity<TextareaState>,
+
         event: &InputEvent,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if matches!(event, InputEvent::Change) {
             let text = self.composer.read(cx).value().to_string();
             self.state.set_draft(text);
             cx.notify();
+        }
+        // Enter sends; Shift+Enter inserts a newline (the textarea handles it).
+        if matches!(event, InputEvent::PressEnter { shift: false, .. }) {
+            self.on_send_click(window, cx);
         }
     }
 
@@ -764,20 +774,19 @@ where
             .collect();
         let send_label = self.state.send_label().to_string();
         let running = self.state.is_running();
-        let cost_label = self.state.conversation_cost().header_label();
+        let footers: Vec<Option<String>> = self
+            .state
+            .messages()
+            .iter()
+            .map(|m| self.state.cost_for(m.id).map(MessageCost::footer_label))
+            .collect();
         let error = self.state.last_error().map(str::to_string);
 
         let theme = cx.theme().clone();
         let muted = theme.colors.muted_foreground;
         let (bubble_bg, radius_lg) = (theme.colors.muted, theme.radius_lg);
 
-        let mut column = v_flex().size_full().gap_2().child(
-            div()
-                .typeset(TextRole::Caption, cx)
-                .figures()
-                .text_color(muted)
-                .child(cost_label),
-        );
+        let mut column = v_flex().size_full().gap_2();
         column = column.child(div().flex_1().min_h_0().child(MessageScroller::new(
             "chat-view-scroller",
             self.scroller.clone(),
@@ -788,9 +797,13 @@ where
                 let text = TextView::markdown(format!("chat-msg-{ix}"), body)
                     .stream_fade(true)
                     .code_block_actions(|_block, _, _| div());
-                let content = v_flex()
-                    .gap_1()
-                    .max_w(px(680.0))
+                let content = v_flex().gap_1().max_w(px(680.0));
+                let content = if is_user {
+                    content.items_end()
+                } else {
+                    content
+                };
+                let content = content
                     .child(
                         div()
                             .typeset(TextRole::Label, app)
@@ -807,17 +820,30 @@ where
                     } else {
                         div().child(text)
                     });
-                let row = h_flex().w_full().py_2();
+                let content = match footers.get(ix).cloned().flatten() {
+                    Some(footer) => content.child(
+                        div()
+                            .typeset(TextRole::Caption, app)
+                            .figures()
+                            .text_color(muted)
+                            .child(footer),
+                    ),
+                    None => content,
+                };
+                // Column + cross-axis alignment keeps a user turn on the right
+                // however the row was measured.
+                let row = v_flex().w_full().py_2().px_4();
                 if is_user {
-                    row.justify_end().child(content)
+                    row.items_end().child(content)
                 } else {
-                    row.child(content)
+                    row.items_start().child(content)
                 }
             },
         )));
         if let Some(message) = error {
             column = column.child(
                 div()
+                    .mx_4()
                     .px_3()
                     .py_2()
                     .rounded(theme.radius)
@@ -828,32 +854,46 @@ where
                     .child(format!("Error: {message}")),
             );
         }
+        let can_send = running || !self.state.draft().trim().is_empty();
+        let send = Button::new("chat-send-stop")
+            .primary()
+            .rounded(px(999.0))
+            .icon(if running {
+                crate::icons::STOP
+            } else {
+                crate::icons::SEND
+            })
+            .disabled(!can_send)
+            .tooltip(send_label)
+            .on_click(cx.listener(|this, _, window, cx| {
+                this.on_send_click(window, cx);
+            }));
+        // One rounded card, like Claude Code: the text grows with the draft,
+        // the round send/stop button sits bottom right, a quiet hint below.
         column.child(
-            h_flex()
-                .items_end()
-                .gap_2()
-                .p_2()
-                .rounded(radius_lg)
-                .border_1()
-                .border_color(theme.colors.border)
-                .bg(theme.colors.sidebar)
+            v_flex()
+                .gap_1()
+                .px_4()
                 .child(
-                    div()
-                        .flex_1()
-                        .child(Input::new(&self.composer).appearance(false)),
+                    v_flex()
+                        .gap_1()
+                        .px_4()
+                        .pt_3()
+                        .pb_2()
+                        .rounded(px(20.0))
+                        .border_1()
+                        .border_color(theme.colors.border)
+                        .bg(theme.colors.background)
+                        .shadow_sm()
+                        .child(Textarea::new(&self.composer).appearance(false))
+                        .child(h_flex().justify_end().child(send)),
                 )
                 .child(
-                    Button::new("chat-send-stop")
-                        .primary()
-                        .icon(if running {
-                            crate::icons::STOP
-                        } else {
-                            crate::icons::SEND
-                        })
-                        .label(send_label)
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.on_send_click(window, cx);
-                        })),
+                    div()
+                        .px_4()
+                        .typeset(TextRole::Caption, cx)
+                        .text_color(muted)
+                        .child("Enter to send · Shift+Enter for a new line"),
                 ),
         )
     }

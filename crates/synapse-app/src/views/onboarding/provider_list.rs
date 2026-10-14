@@ -4,7 +4,7 @@
 //! worker thread.
 
 use super::detected::entry_row;
-use super::provider_dialog::AddProviderForm;
+use super::provider_dialog::open_add_provider_dialog;
 use super::OnboardingView;
 use crate::cli_logo;
 use crate::icons::Icon;
@@ -13,8 +13,7 @@ use crate::theme::TextRole;
 use crate::typography::Typography as _;
 use crate::window::open_store;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::dialog::DialogEntrance;
-use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, Sizable as _, WindowExt as _};
+use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, Sizable as _};
 use gpui_kit::*;
 
 /// Rows shown before the list scrolls.
@@ -74,22 +73,13 @@ impl OnboardingView {
 
     pub(super) fn open_add_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let parent = cx.entity().downgrade();
-        let form = cx.new(|cx| AddProviderForm::new(parent, window, cx));
-        window.open_dialog(cx, move |dialog, window, cx| {
-            // Centred vertically for the short form (about 300px tall).
-            let top = ((window.viewport_size().height.as_f32() - 300.0) / 2.0).max(24.0);
-            let t = cx.theme();
-            dialog
-                .title(div().typeset(TextRole::Title, cx).child("Add a provider"))
-                .w(px(440.0))
-                .margin_top(px(top))
-                .entrance(DialogEntrance::FadeSlide)
-                .bg(t.colors.popover)
-                .border_1()
-                .border_color(t.colors.border)
-                .shadow_lg()
-                .child(form.clone())
-        });
+        open_add_provider_dialog(
+            window,
+            cx,
+            std::rc::Rc::new(move |added, app| {
+                let _ = parent.update(app, |view, cx| view.provider_added(added, cx));
+            }),
+        );
     }
 
     /// Called by the popup after a provider is saved.

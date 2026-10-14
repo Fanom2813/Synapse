@@ -8,6 +8,7 @@ use crate::icons::{self, Icon};
 pub enum SettingsSection {
     Providers,
     Models,
+    Agents,
     CliAgents,
     Search,
     Mcp,
@@ -19,10 +20,10 @@ pub enum SettingsSection {
 }
 
 impl SettingsSection {
-    pub const ALL: [Self; 10] = [
-        Self::Providers,
+    /// Providers and CLIs are set up on the Models page; their own pages are no longer listed.
+    pub const ALL: [Self; 9] = [
         Self::Models,
-        Self::CliAgents,
+        Self::Agents,
         Self::Search,
         Self::Mcp,
         Self::Permissions,
@@ -36,6 +37,7 @@ impl SettingsSection {
         match self {
             Self::Providers => "Providers",
             Self::Models => "Models",
+            Self::Agents => "Agents",
             Self::CliAgents => "CLI agents",
             Self::Search => "Search",
             Self::Mcp => "MCP servers",
@@ -51,6 +53,7 @@ impl SettingsSection {
         match self {
             Self::Providers => Icon::Cloud,
             Self::Models => Icon::Cpu,
+            Self::Agents => icons::TAB_TEAM,
             Self::CliAgents => Icon::SquareTerminal,
             Self::Search => icons::MAGNIFIER,
             Self::Mcp => Icon::Network,
@@ -66,7 +69,8 @@ impl SettingsSection {
     pub fn blurb(self) -> &'static str {
         match self {
             Self::Providers => "Model providers, API keys and which ones are on.",
-            Self::Models => "Default models for lead, members, selector and embeddings.",
+            Self::Models => "Default models, your AI providers and the coding CLIs on this computer.",
+            Self::Agents => "What runs each agent by default: a model, or a coding CLI.",
             Self::CliAgents => "Coding agents found on this computer and their login state.",
             Self::Search => "SearXNG address and search keys for deep research.",
             Self::Mcp => "Tool servers agents can use, with per-tool switches.",

@@ -137,6 +137,9 @@ pub fn open_persisted_shell() -> AppShell {
     let dir = app_dirs::data_dir();
     let _ = std::fs::create_dir_all(&dir);
     let mut shell = AppShell::open_with_persist(dir);
+    if let Some(store) = open_store() {
+        shell.projects = crate::project_setup::load_projects(&store);
+    }
     shell.initial_workspace();
     shell
 }
@@ -189,12 +192,14 @@ pub fn chat_config() -> (
     (backend, model, persist)
 }
 
+pub(crate) const CHAT_PROJECT_ID: &str = "chat";
+
 /// Project + conversation rows backing the main window chat. Created on
 /// first use; existing rows (and their messages) are reused so chat results
 /// survive reopening. Best-effort: persistence is skipped when the store is
 /// unavailable.
 pub fn ensure_chat_conversation(store: &synapse_store::Store) -> Option<String> {
-    const PROJECT_ID: &str = "chat";
+    const PROJECT_ID: &str = CHAT_PROJECT_ID;
     const CONVERSATION_ID: &str = "chat-main";
     if store.get_project(PROJECT_ID).is_err() {
         store
@@ -320,7 +325,12 @@ pub fn launch() {
             let chat = cx.new(|cx| {
                 let mut view = ChatView::new(window, cx, backend, model).with_persist(persist);
                 if let Some(store) = view.persist_store() {
-                    if let Some(conversation) = ensure_chat_conversation(&store) {
+                    let project = shell.open_project_id.as_deref().and_then(|id| {
+                        let name = shell.title.project_name.clone().unwrap_or_default();
+                        crate::project_setup::room_conversation(&store, id, &name)
+                    });
+                    if let Some(conversation) = project.or_else(|| ensure_chat_conversation(&store))
+                    {
                         view.open_conversation(&store, &conversation);
                     }
                 }
@@ -495,8 +505,6 @@ pub fn launch() {
             ]);
             match gpui_tray::Tray::builder()
                 .icon(tray_icon().expect("tray icon"))
-                .title("Synapse")
-                .tooltip("Synapse")
                 .menu(build_tray_menu)
                 .build(cx)
             {

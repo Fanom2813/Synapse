@@ -12,7 +12,9 @@ use gpui_kit::{div, px, App, Div, ParentElement as _, Styled as _};
 pub fn empty_card(cx: &App, state: &EmptyState) -> Div {
     let theme = cx.theme();
     v_flex()
+        .flex_1()
         .items_center()
+        .justify_center()
         .gap_2()
         .p_6()
         .text_center()

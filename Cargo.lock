@@ -8313,6 +8313,7 @@ dependencies = [
  "auto-launch",
  "cargo-packager-updater",
  "dirs 6.0.0",
+ "flate2",
  "futures",
  "gpui-kit",
  "gpui-tray",

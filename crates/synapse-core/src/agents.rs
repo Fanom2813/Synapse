@@ -71,6 +71,9 @@ pub struct CliBackend {
     pub command: Option<String>,
     #[serde(default)]
     pub args: Vec<String>,
+    /// Model the CLI should run (its own id, e.g. `sonnet`); `None` = the CLI's default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -504,6 +507,7 @@ mod agents_tests {
             agent_id: "".into(),
             command: None,
             args: vec![],
+            model: None,
         });
         let err = store
             .create(d)

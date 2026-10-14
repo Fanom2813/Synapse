@@ -1,7 +1,10 @@
 //! Settings pages (UI.md §2.5), shown in the main area while the navigator
 //! is on a settings section. Pages that are not built yet say so plainly.
 
+mod about;
+pub(crate) mod agents;
 mod appearance;
+pub(crate) mod models;
 pub mod providers;
 mod setting_row;
 
@@ -10,7 +13,7 @@ use crate::navigation::SettingsSection;
 use crate::views::shell::ShellView;
 use gpui_kit::component::{v_flex, ActiveTheme as _};
 use gpui_kit::{
-    div, px, AnyElement, Context, InteractiveElement as _, IntoElement as _, ParentElement as _,
+    div, AnyElement, Context, InteractiveElement as _, IntoElement as _, ParentElement as _,
     StatefulInteractiveElement as _, Styled as _,
 };
 
@@ -26,6 +29,9 @@ pub(crate) fn page(
     let body = match section {
         SettingsSection::Appearance => appearance::page(view, cx),
         SettingsSection::Providers => providers::page(view, cx),
+        SettingsSection::Agents => agents::page(view, cx),
+        SettingsSection::Models => models::page(view, cx),
+        SettingsSection::About => about::page(view, cx),
         other => crate::empty_view::empty_card(
             cx,
             &EmptyState {
@@ -45,8 +51,7 @@ pub(crate) fn page(
         .overflow_y_scroll()
         .child(
             v_flex()
-                .max_w(px(720.0))
-                .mx_auto()
+                .w_full()
                 .gap_5()
                 .px_6()
                 .py_6()

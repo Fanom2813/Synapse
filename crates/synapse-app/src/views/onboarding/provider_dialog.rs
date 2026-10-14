@@ -4,7 +4,6 @@
 //! OpenAI-compatible server. The form is its own view so it redraws itself;
 //! saving runs on a worker thread because it touches the keychain.
 
-use super::OnboardingView;
 use crate::custom_providers::{embedded_catalog, parse_models};
 use crate::provider_setup::{add_provider, AddedProvider, NewProvider};
 use crate::theme::TextRole;
@@ -15,7 +14,11 @@ use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::select::{SearchableVec, Select, SelectEvent, SelectItem, SelectState};
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, WindowExt as _};
 use gpui_kit::*;
+use std::rc::Rc;
 use std::sync::OnceLock;
+
+/// Called with each provider the popup saves.
+pub(crate) type OnAdded = Rc<dyn Fn(AddedProvider, &mut App)>;
 
 /// Catalog ids listed first; the rest follow A to Z.
 const POPULAR: [&str; 3] = ["anthropic", "openai", "openrouter"];
@@ -99,7 +102,7 @@ fn field(label: &str, control: impl IntoElement, cx: &App) -> impl IntoElement {
         .child(control)
 }
 
-pub(super) struct AddProviderForm {
+pub(crate) struct AddProviderForm {
     select: Entity<ProviderSelect>,
     key: Entity<InputState>,
     name: Entity<InputState>,
@@ -109,13 +112,13 @@ pub(super) struct AddProviderForm {
     busy: bool,
     /// Last result line: text and whether it is good news.
     note: Option<(String, bool)>,
-    parent: WeakEntity<OnboardingView>,
+    on_added: OnAdded,
     _sub: Subscription,
 }
 
 impl AddProviderForm {
-    pub(super) fn new(
-        parent: WeakEntity<OnboardingView>,
+    pub(crate) fn new(
+        on_added: OnAdded,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -139,7 +142,7 @@ impl AddProviderForm {
             custom: false,
             busy: false,
             note: None,
-            parent,
+            on_added,
             _sub: sub,
         }
     }
@@ -216,9 +219,7 @@ impl AddProviderForm {
         match result {
             Ok(added) => {
                 let name = added.name.clone();
-                let _ = self
-                    .parent
-                    .update(cx, |view, cx| view.provider_added(added, cx));
+                (self.on_added)(added, cx);
                 if keep_open {
                     for input in [&self.key, &self.name, &self.url, &self.models] {
                         input.update(cx, |i, cx| i.set_value("", window, cx));
@@ -300,4 +301,24 @@ impl Render for AddProviderForm {
                 ),
         )
     }
+}
+
+/// Open the "Add a provider" popup; `on_added` hears about each provider saved.
+pub(crate) fn open_add_provider_dialog(window: &mut Window, cx: &mut App, on_added: OnAdded) {
+    let form = cx.new(|cx| AddProviderForm::new(on_added, window, cx));
+    window.open_dialog(cx, move |dialog, window, cx| {
+        // Centred vertically for the short form (about 300px tall).
+        let top = ((window.viewport_size().height.as_f32() - 300.0) / 2.0).max(24.0);
+        let t = cx.theme();
+        dialog
+            .title(div().typeset(TextRole::Title, cx).child("Add a provider"))
+            .w(px(440.0))
+            .margin_top(px(top))
+            .entrance(gpui_kit::component::dialog::DialogEntrance::FadeSlide)
+            .bg(t.colors.popover)
+            .border_1()
+            .border_color(t.colors.border)
+            .shadow_lg()
+            .child(form.clone())
+    });
 }

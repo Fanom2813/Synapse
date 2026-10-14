@@ -91,6 +91,8 @@ pub fn tile(id: &str, label: &str, size: f32, cx: &App) -> Div {
         .bg(theme.colors.secondary)
         .border_1()
         .border_color(theme.colors.border);
+    // Detected ids can carry a suffix (`cursor-agent`); the glyph is keyed by the short one.
+    let id = id.strip_suffix("-agent").unwrap_or(id);
     match LOGOS.iter().find(|l| l.0 == id) {
         Some((_, path, _, Look::Colour)) => base.child(img(*path).size(px(size * 0.58))),
         Some((_, path, _, Look::Mono)) => base.child(

@@ -15,7 +15,6 @@ pub(super) fn main_area(view: &ShellView, cx: &mut Context<ShellView>) -> AnyEle
                 div()
                     .flex_1()
                     .min_h_0()
-                    .px_4()
                     .py_4()
                     .child(view.chat.clone()),
             )

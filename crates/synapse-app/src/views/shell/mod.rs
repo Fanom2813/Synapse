@@ -2,8 +2,13 @@
 //! One file per region; this one owns state, navigation and the frame.
 
 mod actions;
+mod add_agent;
+mod avatar_dialog;
+pub(crate) mod engine_dialog;
+mod key_dialog;
 mod main_area;
 mod nav_row;
+mod new_project;
 mod right_panel;
 mod sidebar;
 mod title_bar;
@@ -48,6 +53,12 @@ pub struct ShellView {
     pub chat: Entity<ChatView<synapse_llm::GenaiBackend>>,
     /// Built the first time the Providers page opens (loads the catalog).
     pub(crate) providers: Option<ProvidersPage>,
+    /// Agents on the open project's team (Team tab).
+    pub(crate) team: Vec<synapse_store::Agent>,
+    /// Settings → Agents, loaded when that page opens.
+    /// Settings → Models, loaded when that page opens.
+    pub(crate) models_page: Option<crate::views::settings::models::ModelsPage>,
+    pub(crate) agents_page: Option<crate::views::settings::agents::AgentsPage>,
     focus: FocusHandle,
 }
 
@@ -57,12 +68,43 @@ impl ShellView {
         chat: Entity<ChatView<synapse_llm::GenaiBackend>>,
         cx: &mut Context<Self>,
     ) -> Self {
-        Self {
+        let mut view = Self {
             shell,
             chat,
             providers: None,
+            team: Vec::new(),
+            models_page: None,
+            agents_page: None,
             focus: cx.focus_handle(),
+        };
+        view.load_team();
+        view
+    }
+
+    /// Reload the team of the open project from the store.
+    fn load_team(&mut self) {
+        self.team = match (&self.shell.open_project_id, crate::window::open_store()) {
+            (Some(id), Some(store)) => {
+                crate::team_setup::ensure_default_team(&store, id);
+                crate::team_setup::project_team(&store, id)
+            }
+            _ => Vec::new(),
+        };
+    }
+
+    /// Take an agent off the open project's team.
+    pub(crate) fn remove_agent(&mut self, agent_id: &str, cx: &mut Context<Self>) {
+        if let (Some(project), Some(store)) =
+            (&self.shell.open_project_id, crate::window::open_store())
+        {
+            let _ = crate::team_setup::remove_from_team(&store, project, agent_id);
         }
+        self.refresh_team(cx);
+    }
+
+    pub(crate) fn refresh_team(&mut self, cx: &mut Context<Self>) {
+        self.load_team();
+        cx.notify();
     }
 
     /// Go to a screen, preparing it first (the Providers page loads lazily).
@@ -75,9 +117,53 @@ impl ShellView {
         if screen == AppScreen::Settings(SettingsSection::Providers) && self.providers.is_none() {
             self.providers = Some(ProvidersPage::new(window, cx));
         }
+        if screen == AppScreen::Settings(SettingsSection::Models) {
+            self.reload_models_page(cx);
+        }
+        if screen == AppScreen::Settings(SettingsSection::Agents) {
+            self.open_agents_page(cx);
+        }
         match screen {
             AppScreen::Room => self.shell.open_room(),
             AppScreen::Settings(section) => self.shell.open_settings(section),
+        }
+        cx.notify();
+    }
+
+    /// A project was created: list it, open it and show its (empty) room.
+    pub(crate) fn project_created(
+        &mut self,
+        made: crate::project_setup::CreatedProject,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let id = made.project.id.clone();
+        self.shell.projects.push(made.project);
+        self.show_project(&id, Some(made.conversation_id), cx);
+    }
+
+    /// Open a project and point the chat at its room conversation.
+    pub(crate) fn show_project(
+        &mut self,
+        id: &str,
+        conversation: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        self.shell.open_project(id);
+        self.shell.open_room();
+        self.load_team();
+        let name = self.shell.title.project_name.clone().unwrap_or_default();
+        let conversation = conversation.or_else(|| {
+            crate::window::open_store()
+                .and_then(|store| crate::project_setup::room_conversation(&store, id, &name))
+        });
+        if let Some(conversation) = conversation {
+            self.chat.update(cx, |chat, cx| {
+                if let Some(store) = chat.persist_store() {
+                    chat.open_conversation(&store, &conversation);
+                    cx.notify();
+                }
+            });
         }
         cx.notify();
     }
@@ -142,7 +228,7 @@ impl Render for ShellView {
         };
 
         let bar_row = title_bar::bar_row(self, bar_toggle, cx);
-        let bar = TitleBar::new()
+        let mut bar = TitleBar::new()
             .h(bar_height)
             .bg(if under {
                 t.colors.background
@@ -150,6 +236,11 @@ impl Render for ShellView {
                 t.colors.sidebar
             })
             .border_b_0();
+        // macOS: the toolkit insets the bar 80 px for the traffic lights; with
+        // the sidebar open the lights are over the sidebar, so use normal padding.
+        if under && sidebar_visible {
+            bar = bar.pl_3();
+        }
         // The card clips to a rectangle, so a bar with its own background must
         // follow the card's curve or its corners show outside it.
         let bar = bar.rounded_t(t.radius_lg - px(1.0)).child(bar_row);
@@ -251,7 +342,7 @@ impl Render for ShellView {
                 cx.notify();
             }))
             .on_action(cx.listener(|this, _: &actions::OpenSettings, window, cx| {
-                this.navigate(AppScreen::Settings(SettingsSection::Providers), window, cx);
+                this.navigate(AppScreen::Settings(SettingsSection::Models), window, cx);
             }))
             .size_full()
             .bg(t.colors.sidebar)

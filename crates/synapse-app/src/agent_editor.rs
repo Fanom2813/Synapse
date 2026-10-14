@@ -106,6 +106,7 @@ pub struct AgentEditorState {
     pub thinking: ThinkingLevel,
     pub cli_agent_id: String,
     pub cli_command: String,
+    pub cli_model: String,
     pub tools: Vec<String>,
     pub permissions: Vec<PermissionRule>,
     /// Private per-agent notes (UI.md §2.3); persisted in the `settings`
@@ -146,6 +147,7 @@ impl AgentEditorState {
                     out.backend_kind = BackendKind::Cli;
                     out.cli_agent_id = cli.agent_id;
                     out.cli_command = cli.command.unwrap_or_default();
+                    out.cli_model = cli.model.unwrap_or_default();
                 }
             }
         }
@@ -252,6 +254,11 @@ impl AgentEditorState {
                     Some(self.cli_command.clone())
                 },
                 args: Vec::new(),
+                model: if self.cli_model.trim().is_empty() {
+                    None
+                } else {
+                    Some(self.cli_model.clone())
+                },
             }),
         }
     }

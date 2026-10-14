@@ -6,7 +6,8 @@ use crate::icons;
 use crate::navigation::{AppScreen, SettingsSection};
 use crate::theme::TextRole;
 use crate::typography::Typography as _;
-use gpui_kit::component::button::Button;
+use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::Sizable as _;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, TitleBar};
 use gpui_kit::{
     div, px, AnyElement, Context, Div, IntoElement as _, ParentElement as _, Styled as _,
@@ -60,22 +61,46 @@ fn room_nav(view: &ShellView, cx: &mut Context<ShellView>) -> AnyElement {
             project.name.clone(),
             selected,
             cx,
-            cx.listener(move |this, _, _, cx| {
-                this.shell.open_project(&id);
-                this.shell.open_room();
-                cx.notify();
-            }),
+            cx.listener(move |this, _, _, cx| this.show_project(&id, None, cx)),
         ));
     }
+    let new_project = cx.listener(|this, _, window, cx| this.open_new_project_dialog(window, cx));
     let list = match view.shell.sidebar_empty() {
-        Some(e) => crate::empty_view::empty_card(cx, &e).into_any_element(),
-        None => projects.into_any_element(),
+        Some(e) => v_flex()
+            .flex_1()
+            .child(
+                crate::empty_view::empty_card(cx, &e).child(
+                    Button::new("new-project-empty")
+                        .primary()
+                        .small()
+                        .icon(icons::PLUS)
+                        .label("New project")
+                        .on_click(new_project),
+                ),
+            )
+            .into_any_element(),
+        None => v_flex().flex_1().child(projects).into_any_element(),
     };
     v_flex()
         .size_full()
         .gap_2()
-        .child(heading("PROJECTS", cx))
-        .child(div().flex_1().child(list))
+        .child(
+            h_flex()
+                .items_center()
+                .justify_between()
+                .child(heading("PROJECTS", cx))
+                .child(
+                    Button::new("new-project")
+                        .ghost()
+                        .small()
+                        .icon(icons::PLUS)
+                        .tooltip("New project")
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.open_new_project_dialog(window, cx)
+                        })),
+                ),
+        )
+        .child(list)
         .child(nav_row(
             "open-settings",
             icons::GEAR,
@@ -83,7 +108,7 @@ fn room_nav(view: &ShellView, cx: &mut Context<ShellView>) -> AnyElement {
             false,
             cx,
             cx.listener(|this, _, window, cx| {
-                this.navigate(AppScreen::Settings(SettingsSection::Providers), window, cx);
+                this.navigate(AppScreen::Settings(SettingsSection::Models), window, cx);
             }),
         ))
         .into_any_element()

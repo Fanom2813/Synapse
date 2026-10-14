@@ -32,6 +32,16 @@ pub fn empty_room() -> EmptyState {
     }
 }
 
+/// The project has no agents on its team yet.
+pub fn no_team() -> EmptyState {
+    EmptyState {
+        icon: icons::TAB_TEAM,
+        title: "No agents yet",
+        body: "Add an agent to the team: pick a name, a role and what runs it.",
+        action: "Add agent",
+    }
+}
+
 /// No sources fetched yet for this project.
 pub fn no_sources() -> EmptyState {
     EmptyState {

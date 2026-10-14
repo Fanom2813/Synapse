@@ -10,6 +10,7 @@ use gpui_kit::{px, App, Hsla};
 /// place palette tokens meet the toolkit (UI.md §8).
 pub fn apply_theme(cx: &mut App, appearance: &crate::theme::Appearance) {
     use crate::theme::{parse_hex, Palette, ThemeMode};
+    use gpui_kit::component::scroll::ScrollbarMode;
     use gpui_kit::component::{Theme, ThemeMode as KitMode};
     let os_dark = cx.theme().is_dark();
     let resolved = appearance.mode.resolve(os_dark);
@@ -59,5 +60,11 @@ pub fn apply_theme(cx: &mut App, appearance: &crate::theme::Appearance) {
         t.colors.primary_active = accent.into();
         t.colors.primary_foreground = gpui_kit::rgb(0xffffff).into();
         t.colors.ring = accent.into();
+        // One scrollbar look on every OS: no track, a quiet thumb that shows
+        // while scrolling (the toolkit would otherwise follow the OS setting).
+        t.scrollbar_mode = ScrollbarMode::Scrolling;
+        t.colors.scrollbar = gpui_kit::transparent_black();
+        t.colors.scrollbar_thumb = c(p.text_muted).opacity(0.35);
+        t.colors.scrollbar_thumb_hover = c(p.text_muted).opacity(0.6);
     });
 }

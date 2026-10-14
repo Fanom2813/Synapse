@@ -1,10 +1,10 @@
 #!/bin/sh
 # Render the installer icons and the tray bitmap from the brand SVGs (dev-only; needs rsvg-convert + ImageMagick).
 #   assets/brand/synapse-tile.svg -> assets/icons/icon-512.png, icon-256.png (Packager.toml)
-#   assets/brand/synapse-mark.svg -> assets/brand/tray-64.rgba (raw 64x64 RGBA, embedded by the app)
+#   assets/brand/synapse-mark.svg -> assets/brand/tray-22.rgba (raw 22x22 RGBA, embedded by the app)
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
 rsvg-convert -w 512 "$root/assets/brand/synapse-tile.svg" -o "$root/assets/icons/icon-512.png"
 rsvg-convert -w 256 "$root/assets/brand/synapse-tile.svg" -o "$root/assets/icons/icon-256.png"
-rsvg-convert -w 64 -h 64 "$root/assets/brand/synapse-mark.svg" | magick png:- -depth 8 "rgba:$root/assets/brand/tray-64.rgba"
-echo "wrote icon-512.png, icon-256.png, tray-64.rgba"
+rsvg-convert -w 22 -h 22 "$root/assets/brand/synapse-mark.svg" | magick png:- -depth 8 "rgba:$root/assets/brand/tray-22.rgba"
+echo "wrote icon-512.png, icon-256.png, tray-22.rgba"

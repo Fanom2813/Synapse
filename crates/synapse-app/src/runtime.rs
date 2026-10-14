@@ -223,6 +223,20 @@ pub fn fetch_url(url: impl Into<String>) -> BridgeTask<Result<String, String>> {
     })
 }
 
+/// Fetch `url` as bytes on the bridge (downloads such as the persona collections).
+pub fn fetch_bytes(url: impl Into<String>) -> BridgeTask<Result<Vec<u8>, String>> {
+    let url = url.into();
+    let client = http_client();
+    spawn(async move {
+        let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(format!("GET {url} -> {status}"));
+        }
+        resp.bytes().await.map(|b| b.to_vec()).map_err(|e| e.to_string())
+    })
+}
+
 /// Read a file off the UI thread.
 pub fn read_file(path: impl Into<std::path::PathBuf>) -> BridgeTask<std::io::Result<String>> {
     let path = path.into();

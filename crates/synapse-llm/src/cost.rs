@@ -27,6 +27,17 @@ pub struct MessageCost {
 }
 
 impl MessageCost {
+    /// Quiet per-message footer, e.g. `~$0.0012 · 1.2k tokens`. The cost is
+    /// left out when the model has no catalog price (local, custom endpoints).
+    pub fn footer_label(&self) -> String {
+        let tokens = format_tokens(self.input_tokens + self.output_tokens);
+        if self.cost_usd > 0.0 {
+            format!("~{} · {tokens}", format_usd(self.cost_usd))
+        } else {
+            tokens
+        }
+    }
+
     /// Price one message with the catalog. Unknown models price at 0.0
     /// (local models, custom endpoints) rather than failing the turn.
     pub fn new(

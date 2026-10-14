@@ -226,6 +226,31 @@ impl Store {
         })
     }
 
+    /// Point an agent at another engine (`backend` is the JSON from `AgentBackend`).
+    pub fn update_agent_backend(&self, id: &str, backend: &str) -> Result<()> {
+        self.with_writer(|c| {
+            let n = c.execute(
+                "UPDATE agents SET backend=?1 WHERE id=?2",
+                params![backend, id],
+            )?;
+            if n == 0 {
+                return Err(StoreError::NotFound("agent", id.into()));
+            }
+            Ok(())
+        })
+    }
+
+    /// Replace an agent's avatar (JSON from `AvatarSpec` or `PackAvatar`).
+    pub fn update_agent_avatar(&self, id: &str, avatar: &str) -> Result<()> {
+        self.with_writer(|c| {
+            let n = c.execute("UPDATE agents SET avatar=?1 WHERE id=?2", params![avatar, id])?;
+            if n == 0 {
+                return Err(StoreError::NotFound("agent", id.into()));
+            }
+            Ok(())
+        })
+    }
+
     pub fn delete_agent(&self, id: &str) -> Result<()> {
         self.with_writer(|c| {
             c.execute("DELETE FROM agents WHERE id=?1", params![id])?;

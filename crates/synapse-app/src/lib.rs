@@ -15,6 +15,7 @@ pub mod icons;
 pub mod layout;
 pub mod lifecycle;
 pub mod logging;
+pub mod mcp_settings;
 pub mod perf_probe;
 pub mod persona_library;
 pub mod runtime;

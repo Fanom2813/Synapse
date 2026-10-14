@@ -30,6 +30,7 @@ synapse-core = { path = "../synapse-core" }
 synapse-personas = { path = "../synapse-personas" }
 synapse-store = { path = "../synapse-store" }
 synapse-llm = { path = "../synapse-llm" }
+synapse-mcp = { path = "../synapse-mcp" }
 secrecy = { workspace = true }
 gpui-kit = { workspace = true }
 interprocess = { workspace = true }

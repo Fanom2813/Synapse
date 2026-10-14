@@ -7647,6 +7647,7 @@ dependencies = [
  "serde_json",
  "synapse-core",
  "synapse-llm",
+ "synapse-mcp",
  "synapse-personas",
  "synapse-store",
  "sysinfo 0.30.13",

@@ -622,6 +622,7 @@ impl TeamTools {
             attachments: Vec::new(),
             priority: crate::bus::Priority::Normal,
             usage: None,
+            memory_ids: Vec::new(),
             seq: 0,
         };
         let seq = self.bus.publish(env.clone()).map_err(TeamToolError::Bus)?;

@@ -410,6 +410,7 @@ impl TeamRoomState {
                 attachments: Vec::new(),
                 priority: synapse_core::Priority::Normal,
                 usage: None,
+                memory_ids: Vec::new(),
                 seq: 0,
             },
             streaming: true,
@@ -481,6 +482,7 @@ impl TeamRoomState {
             attachments: Vec::new(),
             priority: synapse_core::Priority::Normal,
             usage: None,
+            memory_ids: Vec::new(),
             seq: 0,
         };
         self.messages.push(RoomMessage {
@@ -639,6 +641,7 @@ mod team_room_tests {
             attachments: Vec::new(),
             priority: synapse_core::Priority::Normal,
             usage: None,
+            memory_ids: Vec::new(),
             seq: 0,
         };
         r.push_envelope(mk("k1", Kind::Say));

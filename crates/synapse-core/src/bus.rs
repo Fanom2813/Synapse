@@ -150,6 +150,10 @@ pub struct Envelope {
     pub priority: Priority,
     #[serde(default)]
     pub usage: Option<Usage>,
+    /// Ids of memories that informed this message (MEMORY.md §5): the UI
+    /// shows "used N memories" with links from these ids.
+    #[serde(default)]
+    pub memory_ids: Vec<String>,
     /// Assigned on persist; 0 = not yet published.
     #[serde(default)]
     pub seq: u64,
@@ -177,6 +181,7 @@ impl Envelope {
             attachments: Vec::new(),
             priority: Priority::Normal,
             usage: None,
+            memory_ids: Vec::new(),
             seq: 0,
         }
     }

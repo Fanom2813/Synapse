@@ -17,6 +17,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::bus::{Envelope, Kind, Participant, Recipients, TeamBus};
+use crate::memory_recall::MemoryContext;
 
 // -- context ---------------------------------------------------------------
 
@@ -32,6 +33,11 @@ pub struct AgentContext {
     pub summary: String,
     pub snippets: Vec<String>,
     pub tools: Vec<String>,
+    /// Bounded core memory + retrieved memories for this turn (MEMORY.md
+    /// §5). Rendered with `[mem:id]` links; ids are stamped onto published
+    /// messages so the UI can show which memories informed them.
+    #[serde(default)]
+    pub memory: MemoryContext,
 }
 
 impl AgentContext {
@@ -63,6 +69,10 @@ impl AgentContext {
                 out.push('\n');
             }
         }
+        if !self.memory.is_empty() {
+            out.push_str("\n\n");
+            out.push_str(&self.memory.render());
+        }
         out.push_str("\n\n# Messages addressed to you (full)\n");
         for m in &self.addressed {
             out.push_str(&format!("- [{}] {}: {}\n", m.id, describe(&m.from), m.body));
@@ -72,6 +82,11 @@ impl AgentContext {
             out.push_str(ins);
         }
         out
+    }
+
+    /// Ids of the memories in this turn's context (for message attribution).
+    pub fn used_memory_ids(&self) -> Vec<String> {
+        self.memory.used_ids()
     }
 }
 
@@ -180,6 +195,9 @@ pub struct WorkerConfig {
     pub notes: String,
     pub snippets: Vec<String>,
     pub tools: Vec<String>,
+    /// Bounded core memory + retrieved memories for this worker's turns
+    /// (MEMORY.md §5); stamped onto every message it publishes.
+    pub memory: MemoryContext,
     pub max_turns: usize,
     pub summary: RollingSummary,
     /// Agent ids this worker delegated to (may steer them).
@@ -201,6 +219,7 @@ impl WorkerConfig {
             notes: String::new(),
             snippets: Vec::new(),
             tools: Vec::new(),
+            memory: MemoryContext::empty(),
             max_turns: 5,
             summary: RollingSummary::default(),
             delegates: Vec::new(),
@@ -269,6 +288,7 @@ fn ack_status(bus: &TeamBus, cfg: &WorkerConfig, instruction: &str) {
         attachments: Vec::new(),
         priority: crate::bus::Priority::Normal,
         usage: None,
+        memory_ids: Vec::new(),
         seq: 0,
     };
     let _ = bus.publish(env);
@@ -346,8 +366,12 @@ pub async fn run_worker<B: WorkerBackend>(
             summary: cfg.summary.text().to_string(),
             snippets: cfg.snippets.clone(),
             tools: cfg.tools.clone(),
+            memory: cfg.memory.clone(),
         };
         let _ = &mut ctx;
+        // Which memories informed this turn: stamped onto every message the
+        // worker publishes so the UI can show "used N memories".
+        let turn_memory_ids = ctx.used_memory_ids();
         let mut extra = instructions.clone();
         if let Some(u) = urgent.take() {
             extra.push(format!(
@@ -413,6 +437,7 @@ pub async fn run_worker<B: WorkerBackend>(
                 attachments: Vec::new(),
                 priority: crate::bus::Priority::Normal,
                 usage: None,
+                memory_ids: turn_memory_ids.clone(),
                 seq: 0,
             };
             let _ = bus.publish(env);
@@ -436,6 +461,7 @@ pub async fn run_worker<B: WorkerBackend>(
             attachments: Vec::new(),
             priority: crate::bus::Priority::Normal,
             usage: None,
+            memory_ids: turn_memory_ids.clone(),
             seq: 0,
         };
         let _ = bus.publish(env);
@@ -574,6 +600,7 @@ mod worker_tests {
             summary: "s".into(),
             snippets: vec!["snip".into()],
             tools: vec!["ask_agent".into()],
+            memory: crate::memory_recall::MemoryContext::empty(),
         };
         let prompt = ctx.build_prompt(&["steer: focus".into()]);
         let sections = [

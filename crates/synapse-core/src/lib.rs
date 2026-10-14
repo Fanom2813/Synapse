@@ -6,6 +6,7 @@ pub mod artifacts;
 pub mod attachments;
 pub mod bus;
 pub mod memory_files;
+pub mod memory_recall;
 pub mod memory_write;
 pub mod orchestrator;
 pub mod projects;
@@ -35,6 +36,12 @@ pub use memory_files::{
     agent_memory_path, diff_memory_files, digest_memory_path, memory_mirror_needs_import,
     mirror_memory_file, parse_memory_file, project_memory_path, render_memory_file,
     user_memory_path, FileMemory, MemoryChange, MemoryFileError, ParsedEntry,
+};
+pub use memory_recall::{
+    active_memories, archive_search, build_core_block, build_memory_context, estimate_tokens,
+    memory_tool_specs, parse_archive_args, parse_recall_args, recall_search, ArchiveHit,
+    ArchiveItem, MemoryContext, MemoryView, RecalledMemory, DEFAULT_MEMORY_BUDGET_TOKENS,
+    DEFAULT_RETRIEVED_TOP_K, MEMORY_TOOL_NAMES, RECALL_TOOL, SEARCH_ARCHIVE_TOOL,
 };
 pub use memory_write::{
     extract_proposals, filter_secret_proposals, remember_explicit, should_auto_apply,

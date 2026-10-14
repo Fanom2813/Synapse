@@ -613,6 +613,7 @@ mod orchestrator_tests {
             attachments: vec![],
             priority: crate::bus::Priority::Normal,
             usage: None,
+            memory_ids: Vec::new(),
             seq: 0,
         }
     }
@@ -723,6 +724,7 @@ mod orchestrator_tests {
             attachments: vec![],
             priority: crate::bus::Priority::Normal,
             usage: None,
+            memory_ids: Vec::new(),
             seq: 0,
         };
         let hist3 = vec![claim, ch];
@@ -762,6 +764,7 @@ mod orchestrator_tests {
             attachments: vec![],
             priority: crate::bus::Priority::Normal,
             usage: None,
+            memory_ids: Vec::new(),
             seq: 0,
         };
         let vote = |id: &str, from: &str, stance: &str| Envelope {
@@ -781,6 +784,7 @@ mod orchestrator_tests {
             attachments: vec![],
             priority: crate::bus::Priority::Normal,
             usage: None,
+            memory_ids: Vec::new(),
             seq: 0,
         };
         assert_eq!(convergence_status(&[], &m), Convergence::Pending);

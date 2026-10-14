@@ -5,6 +5,7 @@ pub mod bus;
 pub mod projects;
 pub mod redact;
 pub mod skills;
+pub mod team_tools;
 
 pub use agents::{
     api_draft, validate_draft, Agent, AgentBackend, AgentDraft, AgentStore, ApiBackend, CliBackend,
@@ -23,3 +24,4 @@ pub use skills::{
     Skill, SkillInput, SkillScope, SkillStore, SkillsError, LOAD_SKILL_TOOL, READ_SKILL_FILE_TOOL,
     SHELL_NOTE,
 };
+pub use team_tools::{TeamToolError, TeamToolSpec, TeamTools, TEAM_TOOL_NAMES};

@@ -26,6 +26,18 @@ pub const KNOWN_TOOLS: &[&str] = &[
     "create_artifact",
     "load_skill",
     "read_skill_file",
+    // Team communication tools (see `team_tools::TEAM_TOOL_NAMES`).
+    "ask_agent",
+    "answer",
+    "challenge",
+    "agree",
+    "refuse",
+    "delegate",
+    "report_finding",
+    "propose",
+    "vote",
+    "ask_user",
+    "done",
 ];
 
 /// Reasoning effort for API backends.

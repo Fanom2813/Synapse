@@ -32,7 +32,7 @@ tokio-util = "0.7"
 futures = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 rusqlite = { version = "=0.37.0", features = ["bundled"] }
-rusqlite_migration = { version = "=1.2.0" }
+rusqlite_migration = { version = "=2.3.0" }
 genai = { version = "=0.2.4" }
 rmcp = { version = "=0.8.0", features = ["client", "server", "transport-child-process", "transport-streamable-http-client-reqwest", "auth"] }
 agent-client-protocol = { version = "=0.3.0" }

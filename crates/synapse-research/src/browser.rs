@@ -244,6 +244,7 @@ struct FakePage {
     search_hits: Vec<SearchHit>,
 }
 
+#[allow(dead_code)]
 struct PauseState {
     kind: BlockKind,
     notified: bool,
@@ -300,13 +301,7 @@ impl FakeBridge {
     }
 
     /// Serve a URL with HTML (and optional canned search hits for engine pages).
-    pub fn serve_page(
-        &self,
-        url: &str,
-        title: &str,
-        html: &str,
-        search_hits: Vec<SearchHit>,
-    ) {
+    pub fn serve_page(&self, url: &str, title: &str, html: &str, search_hits: Vec<SearchHit>) {
         self.pages.lock().unwrap().insert(
             url.to_string(),
             FakePage {
@@ -331,7 +326,12 @@ impl FakeBridge {
     }
 
     pub fn pending_approvals(&self) -> Vec<FormAction> {
-        self.pending_approvals.lock().unwrap().values().cloned().collect()
+        self.pending_approvals
+            .lock()
+            .unwrap()
+            .values()
+            .cloned()
+            .collect()
     }
 
     pub fn resolve_approval(&self, id: &str, approved: bool) {
@@ -424,10 +424,14 @@ impl FakeBridge {
     ) -> Result<(), BrowserError> {
         let already = self.pauses.lock().unwrap().contains_key(tab_id);
         if !already {
-            self.pauses
-                .lock()
-                .unwrap()
-                .insert(tab_id.to_string(), PauseState { kind: kind.clone(), notified: true, cleared: false });
+            self.pauses.lock().unwrap().insert(
+                tab_id.to_string(),
+                PauseState {
+                    kind: kind.clone(),
+                    notified: true,
+                    cleared: false,
+                },
+            );
             // bring tab to front + single notification
             self.bring_to_front(tab_id).await;
             self.notify(format!(
@@ -505,16 +509,36 @@ impl BrowserBridge for FakeBridge {
         let (html, title, _) = self.page_for(url);
         if detect_block(&html) != BlockKind::None {
             // still open the tab, then pause for the human
-            let id = { let mut n = self.next_tab.lock().unwrap(); *n += 1; format!("tab-{n}") };
-            let tab = Tab { id: id.clone(), agent_id: agent_id.to_string(), url: url.to_string(), title, front: false };
+            let id = {
+                let mut n = self.next_tab.lock().unwrap();
+                *n += 1;
+                format!("tab-{n}")
+            };
+            let tab = Tab {
+                id: id.clone(),
+                agent_id: agent_id.to_string(),
+                url: url.to_string(),
+                title,
+                front: false,
+            };
             self.tabs.lock().unwrap().insert(id.clone(), tab.clone());
             self.tab_html.lock().unwrap().insert(id.clone(), html);
             let kind = detect_block(self.tab_html.lock().unwrap().get(&id).unwrap());
             self.pause_and_wait(&cfg, &id, kind).await?;
             return Ok(tab);
         }
-        let id = { let mut n = self.next_tab.lock().unwrap(); *n += 1; format!("tab-{n}") };
-        let tab = Tab { id: id.clone(), agent_id: agent_id.to_string(), url: url.to_string(), title, front: false };
+        let id = {
+            let mut n = self.next_tab.lock().unwrap();
+            *n += 1;
+            format!("tab-{n}")
+        };
+        let tab = Tab {
+            id: id.clone(),
+            agent_id: agent_id.to_string(),
+            url: url.to_string(),
+            title,
+            front: false,
+        };
         self.tabs.lock().unwrap().insert(id.clone(), tab.clone());
         self.tab_html.lock().unwrap().insert(id, html);
         Ok(tab)
@@ -560,13 +584,29 @@ impl BrowserBridge for FakeBridge {
         // captcha on engine page → pause only this sub-task, then resume/timeout
         let kind = detect_block(&html);
         if kind != BlockKind::None {
-            let id = { let mut n = self.next_tab.lock().unwrap(); *n += 1; format!("tab-{n}") };
-            let tab = Tab { id: id.clone(), agent_id: agent_id.to_string(), url: engine_url, title: engine.to_string(), front: false };
+            let id = {
+                let mut n = self.next_tab.lock().unwrap();
+                *n += 1;
+                format!("tab-{n}")
+            };
+            let tab = Tab {
+                id: id.clone(),
+                agent_id: agent_id.to_string(),
+                url: engine_url,
+                title: engine.to_string(),
+                front: false,
+            };
             self.tabs.lock().unwrap().insert(id.clone(), tab);
             self.tab_html.lock().unwrap().insert(id.clone(), html);
             self.pause_and_wait(&cfg, &id, kind).await?;
             // resumed: serve cleared content if the human replaced it
-            let cleared_html = self.tab_html.lock().unwrap().get(&id).cloned().unwrap_or_default();
+            let cleared_html = self
+                .tab_html
+                .lock()
+                .unwrap()
+                .get(&id)
+                .cloned()
+                .unwrap_or_default();
             if detect_block(&cleared_html) == BlockKind::None {
                 return Ok(hits);
             }
@@ -597,7 +637,13 @@ impl BrowserBridge for FakeBridge {
         if kind != BlockKind::None {
             let cfg = self.check_enabled()?;
             self.pause_and_wait(&cfg, tab_id, kind).await?;
-            let cleared = self.tab_html.lock().unwrap().get(tab_id).cloned().unwrap_or_default();
+            let cleared = self
+                .tab_html
+                .lock()
+                .unwrap()
+                .get(tab_id)
+                .cloned()
+                .unwrap_or_default();
             return Ok(crate::reader::html_to_markdown(&cleared, &tab.url).unwrap_or_default());
         }
         // Page content is untrusted data; return as-is (callers wrap as data).
@@ -610,9 +656,18 @@ impl BrowserBridge for FakeBridge {
         let t = target.to_lowercase();
         // Clicking submit buttons always asks.
         if t.contains("submit") || t.contains("buy") || t.contains("pay") || t.contains("send") {
-            let id = format!("approval-{}-{}", tab_id, self.pending_approvals.lock().unwrap().len());
+            let id = format!(
+                "approval-{}-{}",
+                tab_id,
+                self.pending_approvals.lock().unwrap().len()
+            );
             // only insert once per (tab,target)
-            let exists = self.pending_approvals.lock().unwrap().values().any(|a| a.tab_id == tab_id && a.target == target);
+            let exists = self
+                .pending_approvals
+                .lock()
+                .unwrap()
+                .values()
+                .any(|a| a.tab_id == tab_id && a.target == target);
             if !exists {
                 self.pending_approvals.lock().unwrap().insert(
                     id.clone(),
@@ -646,10 +701,20 @@ impl BrowserBridge for FakeBridge {
             return Err(BrowserError::PasswordDenied);
         }
         // Typing into forms always asks.
-        if t.contains("input") || t.contains("form") || t.contains("field") || t.contains("search") {
-            let exists = self.pending_approvals.lock().unwrap().values().any(|a| a.tab_id == tab_id && a.target == target);
+        if t.contains("input") || t.contains("form") || t.contains("field") || t.contains("search")
+        {
+            let exists = self
+                .pending_approvals
+                .lock()
+                .unwrap()
+                .values()
+                .any(|a| a.tab_id == tab_id && a.target == target);
             if !exists {
-                let id = format!("approval-{}-{}", tab_id, self.pending_approvals.lock().unwrap().len());
+                let id = format!(
+                    "approval-{}-{}",
+                    tab_id,
+                    self.pending_approvals.lock().unwrap().len()
+                );
                 self.pending_approvals.lock().unwrap().insert(
                     id.clone(),
                     FormAction {
@@ -725,7 +790,10 @@ pub async fn browser_research_with_fallback(
     match browser_provider.search(query).await {
         Ok(hits) => Ok(hits),
         Err(SearchError::Provider { msg, .. })
-            if msg.contains("timed out") || msg.contains("CAPTCHA") || msg.contains("captcha") || msg.contains("fell back") =>
+            if msg.contains("timed out")
+                || msg.contains("CAPTCHA")
+                || msg.contains("captcha")
+                || msg.contains("fell back") =>
         {
             fallback.search(query).await
         }
@@ -756,10 +824,15 @@ mod tests {
 
     #[tokio::test]
     async fn browser_opt_in_required() {
-        let mut cfg = BrowserConfig::default();
-        cfg.cdp_endpoint = fake_cdp_endpoint("opt");
+        let cfg = BrowserConfig {
+            cdp_endpoint: fake_cdp_endpoint("opt"),
+            ..Default::default()
+        };
         let bridge = FakeBridge::connect(cfg).unwrap();
-        let err = bridge.open_tab("a1", "https://example.com").await.unwrap_err();
+        let err = bridge
+            .open_tab("a1", "https://example.com")
+            .await
+            .unwrap_err();
         assert!(matches!(err, BrowserError::NotEnabled));
         let err = bridge.search("a1", "google.com", "q").await.unwrap_err();
         assert!(matches!(err, BrowserError::NotEnabled));
@@ -767,8 +840,10 @@ mod tests {
 
     #[tokio::test]
     async fn browser_fake_cdp_endpoint_required() {
-        let mut cfg = BrowserConfig::default();
-        cfg.enabled = true;
+        let cfg = BrowserConfig {
+            enabled: true,
+            ..Default::default()
+        };
         let err = FakeBridge::connect(cfg).unwrap_err();
         assert!(matches!(err, BrowserError::Cdp(_)));
         // fake endpoint connects
@@ -822,12 +897,20 @@ mod tests {
     #[tokio::test]
     async fn browser_domain_blocks() {
         let b = enabled_bridge();
-        for host in ["https://chase.com/login", "https://1password.com/vault", "https://paypal.com/pay"] {
+        for host in [
+            "https://chase.com/login",
+            "https://1password.com/vault",
+            "https://paypal.com/pay",
+        ] {
             let err = b.open_tab("a", host).await.unwrap_err();
             assert!(matches!(err, BrowserError::BlockedDomain(_)), "{host}");
         }
         // custom extra block
-        b.cfg.lock().unwrap().extra_blocked_hosts.push("evil.com".into());
+        b.cfg
+            .lock()
+            .unwrap()
+            .extra_blocked_hosts
+            .push("evil.com".into());
         let err = b.open_tab("a", "https://evil.com/x").await.unwrap_err();
         assert!(matches!(err, BrowserError::BlockedDomain(_)));
         // allowed domain works
@@ -838,13 +921,19 @@ mod tests {
     async fn browser_form_actions_need_approval_and_passwords_denied() {
         let b = enabled_bridge();
         let tab = b.open_tab("a", "https://example.com/form").await.unwrap();
-        let err = b.type_text("a", &tab.id, "input[name=q]", "hello").await.unwrap_err();
+        let err = b
+            .type_text("a", &tab.id, "input[name=q]", "hello")
+            .await
+            .unwrap_err();
         assert!(matches!(err, BrowserError::ApprovalNeeded(_)));
         assert_eq!(b.pending_approvals().len(), 1);
         let err = b.click("a", &tab.id, "submit-button").await.unwrap_err();
         assert!(matches!(err, BrowserError::ApprovalNeeded(_)));
         // passwords never
-        let err = b.type_text("a", &tab.id, "input[type=password]", "s3cret").await.unwrap_err();
+        let err = b
+            .type_text("a", &tab.id, "input[type=password]", "s3cret")
+            .await
+            .unwrap_err();
         assert!(matches!(err, BrowserError::PasswordDenied));
     }
 
@@ -857,9 +946,8 @@ mod tests {
         b.serve_captcha("https://google.com/search?q=blocked");
         // run search in background; it should pause + notify
         let b2 = b.clone();
-        let handle = tokio::spawn(async move {
-            b2.search("agent-1", "google.com", "blocked").await
-        });
+        let handle =
+            tokio::spawn(async move { b2.search("agent-1", "google.com", "blocked").await });
         // wait for pause + notification (event-driven, polling only in test)
         let mut waited = 0;
         while b.notifications().is_empty() && waited < 50 {
@@ -886,7 +974,9 @@ mod tests {
         b.serve_captcha("https://google.com/search?q=stuck");
         let provider = BrowserSearchProvider::new(b.clone(), "google.com", "a1");
         let fallback = MockSearch::new("ddg", vec![SearchHit::new("https://f.com", "F", "s")]);
-        let hits = browser_research_with_fallback(b.clone(), provider, &fallback, "stuck").await.unwrap();
+        let hits = browser_research_with_fallback(b.clone(), provider, &fallback, "stuck")
+            .await
+            .unwrap();
         assert_eq!(hits[0].url, "https://f.com");
     }
 

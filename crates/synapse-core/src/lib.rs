@@ -1,5 +1,6 @@
 //! synapse-core: domain types, team bus, orchestrator (see docs/ARCHITECTURE.md).
 
+pub mod agent_builder;
 pub mod agents;
 pub mod artifacts;
 pub mod attachments;
@@ -7,7 +8,6 @@ pub mod bus;
 pub mod orchestrator;
 pub mod projects;
 pub mod redact;
-pub mod agent_builder;
 pub mod skills;
 pub mod team_tools;
 pub mod worker;

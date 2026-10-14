@@ -132,7 +132,10 @@ impl DraftAgent {
         for sk in &self.suggested_skills {
             md.push_str(&format!("- {sk}\n"));
         }
-        md.push_str(&format!("\n## Model: {}\nAvatar: {}\n", self.model_suggestion, self.avatar_spec));
+        md.push_str(&format!(
+            "\n## Model: {}\nAvatar: {}\n",
+            self.model_suggestion, self.avatar_spec
+        ));
         md
     }
 }
@@ -146,7 +149,8 @@ impl DraftAgent {
 /// not speaking for everyone, states AI perspective, no stereotypes.
 pub fn validate_guardrails(draft: &DraftAgent) -> Vec<String> {
     let mut v = Vec::new();
-    let combined = format!("{} {} {}", draft.persona, draft.instructions, draft.role).to_lowercase();
+    let combined =
+        format!("{} {} {}", draft.persona, draft.instructions, draft.role).to_lowercase();
 
     // Must state AI perspective
     if !combined.contains("ai") || !combined.contains("perspective") {
@@ -157,8 +161,14 @@ pub fn validate_guardrails(draft: &DraftAgent) -> Vec<String> {
         v.push("must not claim to be a real person or speak for everyone".into());
     }
     // Must reflect diversity / not stereotype
-    if combined.contains("all ugandans") || combined.contains("all japanese") || combined.contains("everyone in") {
-        v.push("avoid stereotypes: reflects diversity inside the group and says when views differ".into());
+    if combined.contains("all ugandans")
+        || combined.contains("all japanese")
+        || combined.contains("everyone in")
+    {
+        v.push(
+            "avoid stereotypes: reflects diversity inside the group and says when views differ"
+                .into(),
+        );
     }
     // Knowledge must be cited
     if draft.knowledge.facts.iter().any(|f| f.citations.is_empty()) {
@@ -168,7 +178,11 @@ pub fn validate_guardrails(draft: &DraftAgent) -> Vec<String> {
         v.push("must be grounded in sources: include at least one cited source".into());
     }
     // Persona must mention diversity or regional variation
-    if !combined.contains("divers") && !combined.contains("region") && !combined.contains("urban") && !combined.contains("rural") {
+    if !combined.contains("divers")
+        && !combined.contains("region")
+        && !combined.contains("urban")
+        && !combined.contains("rural")
+    {
         v.push("should reflect diversity (regions, generations, urban/rural) and note when views differ".into());
     }
     v
@@ -179,7 +193,9 @@ pub fn apply_guardrails(draft: &mut DraftAgent) {
         draft.instructions.push_str("\n\nYou are an AI perspective built from research, not a real person. Do not claim to speak for everyone; note diversity and when views differ.");
     }
     if !draft.persona.to_lowercase().contains("divers") {
-        draft.persona.push_str("\n\nNote: views vary by region, generation, and urban/rural context.");
+        draft
+            .persona
+            .push_str("\n\nNote: views vary by region, generation, and urban/rural context.");
     }
 }
 
@@ -191,39 +207,95 @@ pub fn mock_sources_for(description: &str) -> Vec<SourceRef> {
     let lower = description.to_lowercase();
     if lower.contains("uganda") {
         vec![
-            SourceRef { id: "s1".into(), url: "https://www.newvision.co.ug/story".into(), title: "Uganda culture overview — New Vision".into(), quote: "Community decisions often involve clan elders and consensus.".into() },
-            SourceRef { id: "s2".into(), url: "https://www.mak.ac.ug/research/uganda-society".into(), title: "Makerere University — Society in Uganda".into(), quote: "Urban Kampala differs markedly from rural Ankole in daily economic life.".into() },
-            SourceRef { id: "s3".into(), url: "https://en.wikipedia.org/wiki/Culture_of_Uganda".into(), title: "Culture of Uganda".into(), quote: "Luganda, Swahili and English are widely used; mobile money is central.".into() },
+            SourceRef {
+                id: "s1".into(),
+                url: "https://www.newvision.co.ug/story".into(),
+                title: "Uganda culture overview — New Vision".into(),
+                quote: "Community decisions often involve clan elders and consensus.".into(),
+            },
+            SourceRef {
+                id: "s2".into(),
+                url: "https://www.mak.ac.ug/research/uganda-society".into(),
+                title: "Makerere University — Society in Uganda".into(),
+                quote: "Urban Kampala differs markedly from rural Ankole in daily economic life."
+                    .into(),
+            },
+            SourceRef {
+                id: "s3".into(),
+                url: "https://en.wikipedia.org/wiki/Culture_of_Uganda".into(),
+                title: "Culture of Uganda".into(),
+                quote: "Luganda, Swahili and English are widely used; mobile money is central."
+                    .into(),
+            },
         ]
     } else {
         vec![
-            SourceRef { id: "s1".into(), url: "https://example.com/source1".into(), title: "Local research — example".into(), quote: "Findings grounded in recent local sources.".into() },
-            SourceRef { id: "s2".into(), url: "https://example.com/source2".into(), title: "University study — example".into(), quote: "Diversity within the group is significant.".into() },
+            SourceRef {
+                id: "s1".into(),
+                url: "https://example.com/source1".into(),
+                title: "Local research — example".into(),
+                quote: "Findings grounded in recent local sources.".into(),
+            },
+            SourceRef {
+                id: "s2".into(),
+                url: "https://example.com/source2".into(),
+                title: "University study — example".into(),
+                quote: "Diversity within the group is significant.".into(),
+            },
         ]
     }
 }
 
-pub fn build_draft(description: &str, answers: &HashMap<String, String>, sources: Vec<SourceRef>) -> DraftAgent {
+pub fn build_draft(
+    description: &str,
+    answers: &HashMap<String, String>,
+    sources: Vec<SourceRef>,
+) -> DraftAgent {
     let lower = description.to_lowercase();
-    let region = answers.get("region").cloned().unwrap_or_else(|| "Nationwide".into());
-    let language = answers.get("language").cloned().unwrap_or_else(|| "English, Luganda".into());
-    let purpose = answers.get("purpose").cloned().unwrap_or_else(|| "general assistance".into());
+    let region = answers
+        .get("region")
+        .cloned()
+        .unwrap_or_else(|| "Nationwide".into());
+    let language = answers
+        .get("language")
+        .cloned()
+        .unwrap_or_else(|| "English, Luganda".into());
+    let purpose = answers
+        .get("purpose")
+        .cloned()
+        .unwrap_or_else(|| "general assistance".into());
 
-    let name = if lower.contains("uganda") { "Nabirye — Ugandan Culture Guide" } else { "Research Assistant" }.to_string();
-    let role = if lower.contains("market") { "Market research specialist" } else { "Cultural advisor" }.to_string();
+    let name = if lower.contains("uganda") {
+        "Nabirye — Ugandan Culture Guide"
+    } else {
+        "Research Assistant"
+    }
+    .to_string();
+    let role = if lower.contains("market") {
+        "Market research specialist"
+    } else {
+        "Cultural advisor"
+    }
+    .to_string();
 
     let mut persona = format!(
         "You are {name}, an AI perspective built from research on the culture described as \"{description}\". Focus: {region}. Languages: {language}. Purpose: {purpose}. Grounded in local sources (local news, universities, writers from the place), you explain values, history, social norms, economy, daily life, current affairs, decision-making, and what outsiders get wrong. You note diversity by region, generation, and urban/rural, and say when views differ."
     );
-    persona.push_str("\n\nVoice: respectful, specific, cites sources; never stereotypes; states limits.");
+    persona.push_str(
+        "\n\nVoice: respectful, specific, cites sources; never stereotypes; states limits.",
+    );
 
     let mut instructions = persona.clone();
     instructions.push_str("\n\nNever claim to be a real person or speak for everyone.");
 
-    let facts = sources.iter().take(2).map(|s| CitedFact {
-        fact: s.quote.clone(),
-        citations: vec![s.id.clone()],
-    }).collect::<Vec<_>>();
+    let facts = sources
+        .iter()
+        .take(2)
+        .map(|s| CitedFact {
+            fact: s.quote.clone(),
+            citations: vec![s.id.clone()],
+        })
+        .collect::<Vec<_>>();
 
     let knowledge_md = format!(
         "# Knowledge Pack\n\n- Region focus: {region} — see [{}]({})\n- Language: {language}\n- Purpose: {purpose}\n\n## Key facts\n{}",
@@ -237,7 +309,10 @@ pub fn build_draft(description: &str, answers: &HashMap<String, String>, sources
         role,
         persona,
         instructions,
-        knowledge: KnowledgePack { markdown: knowledge_md, facts },
+        knowledge: KnowledgePack {
+            markdown: knowledge_md,
+            facts,
+        },
         sources,
         suggested_skills: vec!["research-method".into(), "citation-style".into()],
         suggested_tools: vec!["web_search".into(), "read_url".into()],
@@ -260,7 +335,10 @@ pub struct KnowledgeDiff {
     pub markdown_changed: bool,
 }
 
-pub fn refresh_knowledge(old: &DraftAgent, new_sources: Vec<SourceRef>) -> (DraftAgent, KnowledgeDiff) {
+pub fn refresh_knowledge(
+    old: &DraftAgent,
+    new_sources: Vec<SourceRef>,
+) -> (DraftAgent, KnowledgeDiff) {
     let mut new_draft = old.clone();
     // Merge sources dedup by id
     let mut merged = old.sources.clone();
@@ -273,15 +351,39 @@ pub fn refresh_knowledge(old: &DraftAgent, new_sources: Vec<SourceRef>) -> (Draf
     }
     let old_facts = old.knowledge.facts.clone();
     // Rebuild facts from first two merged sources to simulate update
-    let new_facts = merged.iter().take(2).map(|s| CitedFact { fact: s.quote.clone(), citations: vec![s.id.clone()] }).collect::<Vec<_>>();
-    let added_facts = new_facts.iter().filter(|f| !old_facts.contains(f)).cloned().collect::<Vec<_>>();
-    let removed_facts = old_facts.iter().filter(|f| !new_facts.contains(f)).cloned().collect::<Vec<_>>();
-    let new_md = format!("{}\n\n_Refreshed {} sources._", old.knowledge.markdown, merged.len());
+    let new_facts = merged
+        .iter()
+        .take(2)
+        .map(|s| CitedFact {
+            fact: s.quote.clone(),
+            citations: vec![s.id.clone()],
+        })
+        .collect::<Vec<_>>();
+    let added_facts = new_facts
+        .iter()
+        .filter(|f| !old_facts.contains(f))
+        .cloned()
+        .collect::<Vec<_>>();
+    let removed_facts = old_facts
+        .iter()
+        .filter(|f| !new_facts.contains(f))
+        .cloned()
+        .collect::<Vec<_>>();
+    let new_md = format!(
+        "{}\n\n_Refreshed {} sources._",
+        old.knowledge.markdown,
+        merged.len()
+    );
     let markdown_changed = new_md != old.knowledge.markdown;
     new_draft.sources = merged;
     new_draft.knowledge.facts = new_facts;
     new_draft.knowledge.markdown = new_md;
-    let diff = KnowledgeDiff { added_facts, removed_facts, added_sources, markdown_changed };
+    let diff = KnowledgeDiff {
+        added_facts,
+        removed_facts,
+        added_sources,
+        markdown_changed,
+    };
     (new_draft, diff)
 }
 
@@ -319,9 +421,22 @@ static PROPOSAL_CTR: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64
 pub fn propose_agent(brief: &str, auto_approve_lead: bool) -> AgentProposal {
     let sources = mock_sources_for(brief);
     let draft = build_draft(brief, &HashMap::new(), sources);
-    let id = format!("proposal_{}", PROPOSAL_CTR.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
-    let status = if auto_approve_lead { ProposalStatus::Approved } else { ProposalStatus::Pending };
-    AgentProposal { id, brief: brief.into(), draft, status, auto_approve: auto_approve_lead }
+    let id = format!(
+        "proposal_{}",
+        PROPOSAL_CTR.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
+    let status = if auto_approve_lead {
+        ProposalStatus::Approved
+    } else {
+        ProposalStatus::Pending
+    };
+    AgentProposal {
+        id,
+        brief: brief.into(),
+        draft,
+        status,
+        auto_approve: auto_approve_lead,
+    }
 }
 
 pub fn build_team_for_goal(goal: &str, auto_approve: bool) -> Vec<AgentProposal> {
@@ -330,7 +445,10 @@ pub fn build_team_for_goal(goal: &str, auto_approve: bool) -> Vec<AgentProposal>
         format!("{goal} — critic"),
         format!("{goal} — writer"),
     ];
-    roles.into_iter().map(|b| propose_agent(&b, auto_approve)).collect()
+    roles
+        .into_iter()
+        .map(|b| propose_agent(&b, auto_approve))
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -400,7 +518,10 @@ impl BuilderSession {
     pub fn test_chat_reply(&mut self, user_msg: &str) -> String {
         self.test_chat.push(("user".into(), user_msg.into()));
         let reply = if let Some(d) = &self.draft {
-            format!("{} here — {} (AI perspective, cited). You said: {}", d.name, d.role, user_msg)
+            format!(
+                "{} here — {} (AI perspective, cited). You said: {}",
+                d.name, d.role, user_msg
+            )
         } else {
             format!("(no draft yet) You said: {user_msg}")
         };
@@ -457,7 +578,9 @@ mod agent_builder_tests {
 
     #[test]
     fn agent_builder_clarify_questions_at_most_three_and_skippable() {
-        let qs = generate_clarify_questions("a Ugandan agent who understands how people in Uganda think, talk and decide");
+        let qs = generate_clarify_questions(
+            "a Ugandan agent who understands how people in Uganda think, talk and decide",
+        );
         assert!(qs.len() <= 3 && !qs.is_empty());
         for q in &qs {
             assert!(q.skippable);
@@ -468,7 +591,11 @@ mod agent_builder_tests {
         assert_eq!(s.phase, BuilderPhase::Researching);
         s.run_research();
         assert!(s.draft.is_some());
-        assert!(s.guardrail_issues().is_empty(), "guardrails should pass: {:?}", s.guardrail_issues());
+        assert!(
+            s.guardrail_issues().is_empty(),
+            "guardrails should pass: {:?}",
+            s.guardrail_issues()
+        );
     }
 
     #[test]
@@ -495,7 +622,8 @@ mod agent_builder_tests {
         let mut s = BuilderSession::new("Uganda culture");
         s.run_research();
         let mut d = s.draft.clone().unwrap();
-        d.persona = "I am a real person who speaks for everyone. All Ugandans think the same.".into();
+        d.persona =
+            "I am a real person who speaks for everyone. All Ugandans think the same.".into();
         d.instructions = d.persona.clone();
         d.sources = vec![];
         let issues = validate_guardrails(&d);
@@ -535,7 +663,12 @@ mod agent_builder_tests {
         let mut s = BuilderSession::new("Uganda culture agent");
         s.run_research();
         let old_md = s.draft.as_ref().unwrap().knowledge.markdown.clone();
-        let new_src = SourceRef { id: "s99".into(), url: "https://example.com/new".into(), title: "New study".into(), quote: "New finding about mobile money in rural areas.".into() };
+        let new_src = SourceRef {
+            id: "s99".into(),
+            url: "https://example.com/new".into(),
+            title: "New study".into(),
+            quote: "New finding about mobile money in rural areas.".into(),
+        };
         let diff = s.refresh(vec![new_src]).expect("diff");
         assert!(diff.added_sources.iter().any(|s| s.id == "s99"));
         assert!(diff.markdown_changed);
@@ -545,7 +678,10 @@ mod agent_builder_tests {
     #[test]
     fn agent_builder_propose_agent_approval_gated_and_build_team() {
         // propose_agent requires approval by default
-        let mut p = propose_agent("we need someone who knows Ugandan mobile-money regulation", false);
+        let mut p = propose_agent(
+            "we need someone who knows Ugandan mobile-money regulation",
+            false,
+        );
         assert_eq!(p.status, ProposalStatus::Pending);
         assert!(!p.draft.sources.is_empty());
         assert!(validate_guardrails(&p.draft).is_empty());
@@ -558,7 +694,13 @@ mod agent_builder_tests {
             name: p.draft.name.clone(),
             role: p.draft.role.clone(),
             instructions: p.draft.instructions.clone(),
-            backend: crate::agents::AgentBackend::Api(crate::agents::ApiBackend { provider: "anthropic".into(), model: p.draft.model_suggestion.clone(), temperature: None, max_tokens: None, thinking: crate::agents::ThinkingLevel::Off }),
+            backend: crate::agents::AgentBackend::Api(crate::agents::ApiBackend {
+                provider: "anthropic".into(),
+                model: p.draft.model_suggestion.clone(),
+                temperature: None,
+                max_tokens: None,
+                thinking: crate::agents::ThinkingLevel::Off,
+            }),
             tools: p.draft.suggested_tools.clone(),
             avatar: p.draft.avatar_spec.clone(),
             persona_source: "proposal".into(),

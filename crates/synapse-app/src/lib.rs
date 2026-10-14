@@ -1,5 +1,6 @@
 //! synapse-app: GPUI views, windows, tray, hotkey, notifications, theme (see docs/ARCHITECTURE.md).
 
+pub mod agent_builder_ui;
 pub mod agent_editor;
 pub mod app_dirs;
 pub mod artifact_panel;
@@ -21,7 +22,6 @@ pub mod settings_providers;
 pub mod shell;
 pub mod skill_library;
 pub mod sources_panel;
-pub mod agent_builder_ui;
 pub mod team_room;
 pub mod theme;
 pub mod titlebar;

@@ -2,11 +2,11 @@
 //! STORM-style: lead identifies 4-6 perspectives, maps to members, Q&A with grounded expert, outline.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
-use crate::research_loop::{Finding, Learning};
+use crate::research_loop::Finding;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -48,7 +48,11 @@ pub struct TeamMember {
 }
 
 impl TeamMember {
-    pub fn new(id: impl Into<String>, name: impl Into<String>, expertise: impl Into<String>) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        expertise: impl Into<String>,
+    ) -> Self {
         Self {
             id: id.into(),
             name: name.into(),
@@ -124,7 +128,9 @@ pub struct MockPerspectiveLlm {
 
 impl MockPerspectiveLlm {
     pub fn new(perspectives: Vec<Perspective>) -> Self {
-        Self { perspectives: Mutex::new(perspectives) }
+        Self {
+            perspectives: Mutex::new(perspectives),
+        }
     }
     pub fn with_defaults() -> Self {
         Self::new(default_perspectives())
@@ -133,11 +139,44 @@ impl MockPerspectiveLlm {
 
 fn default_perspectives() -> Vec<Perspective> {
     vec![
-        Perspective::new("p1", "Technical", "Engineering", "Technical feasibility and architecture", vec!["What are the technical challenges?".into(), "What architectures scale best?".into()]),
-        Perspective::new("p2", "Economic", "Economics", "Cost, market and business model", vec!["What is the cost structure?".into()]),
-        Perspective::new("p3", "User", "UX / Human factors", "User needs and adoption", vec!["Who are the users and what do they need?".into()]),
-        Perspective::new("p4", "Regulatory", "Policy / Legal", "Regulation, compliance, risks", vec!["What regulations apply?".into()]),
-        Perspective::new("p5", "Environmental", "Sustainability", "Environmental and societal impact", vec!["What is the environmental impact?".into()]),
+        Perspective::new(
+            "p1",
+            "Technical",
+            "Engineering",
+            "Technical feasibility and architecture",
+            vec![
+                "What are the technical challenges?".into(),
+                "What architectures scale best?".into(),
+            ],
+        ),
+        Perspective::new(
+            "p2",
+            "Economic",
+            "Economics",
+            "Cost, market and business model",
+            vec!["What is the cost structure?".into()],
+        ),
+        Perspective::new(
+            "p3",
+            "User",
+            "UX / Human factors",
+            "User needs and adoption",
+            vec!["Who are the users and what do they need?".into()],
+        ),
+        Perspective::new(
+            "p4",
+            "Regulatory",
+            "Policy / Legal",
+            "Regulation, compliance, risks",
+            vec!["What regulations apply?".into()],
+        ),
+        Perspective::new(
+            "p5",
+            "Environmental",
+            "Sustainability",
+            "Environmental and societal impact",
+            vec!["What is the environmental impact?".into()],
+        ),
     ]
 }
 
@@ -293,7 +332,10 @@ pub fn conduct_qa(
                 (ans, srcs)
             } else {
                 (
-                    format!("No findings yet for perspective '{}': {q}", a.perspective.name),
+                    format!(
+                        "No findings yet for perspective '{}': {q}",
+                        a.perspective.name
+                    ),
                     Vec::new(),
                 )
             };
@@ -324,8 +366,10 @@ pub fn assemble_outline(
     let mut gaps = Vec::new();
 
     // Map perspective id -> assignment for contributor lookup
-    let _assign_by_pers: HashMap<String, &PerspectiveAssignment> =
-        assignments.iter().map(|a| (a.perspective.id.clone(), a)).collect();
+    let _assign_by_pers: HashMap<String, &PerspectiveAssignment> = assignments
+        .iter()
+        .map(|a| (a.perspective.id.clone(), a))
+        .collect();
 
     for a in assignments {
         let findings = findings_by_perspective.get(&a.perspective.id);
@@ -350,7 +394,10 @@ pub fn assemble_outline(
             }
         }
         // also pull sources from Q&A for this perspective
-        for qa in qa_exchanges.iter().filter(|q| q.perspective_id == a.perspective.id) {
+        for qa in qa_exchanges
+            .iter()
+            .filter(|q| q.perspective_id == a.perspective.id)
+        {
             for s in &qa.sources {
                 if !source_refs.contains(s) {
                     source_refs.push(s.clone());
@@ -367,11 +414,17 @@ pub fn assemble_outline(
 
         if key_points.is_empty() {
             gaps.push(format!("{}: no findings yet", a.perspective.name));
-            key_points.push(format!("Open questions: {}", a.perspective.research_questions.join("; ")));
+            key_points.push(format!(
+                "Open questions: {}",
+                a.perspective.research_questions.join("; ")
+            ));
         }
 
         let section_id = format!("sec-{}", a.perspective.id);
-        contributions.entry(a.member_id.clone()).or_default().push(section_id.clone());
+        contributions
+            .entry(a.member_id.clone())
+            .or_default()
+            .push(section_id.clone());
 
         sections.push(OutlineSection {
             id: section_id,
@@ -393,7 +446,10 @@ pub fn assemble_outline(
     let executive_summary = if sections.is_empty() {
         format!("No perspectives identified for {topic}.")
     } else {
-        let mut sum = format!("Report on {topic} covering {} perspectives: ", sections.len());
+        let mut sum = format!(
+            "Report on {topic} covering {} perspectives: ",
+            sections.len()
+        );
         sum.push_str(
             &sections
                 .iter()
@@ -410,7 +466,12 @@ pub fn assemble_outline(
         }
         let wc = sum.split_whitespace().count();
         if wc > 120 {
-            sum = sum.split_whitespace().take(120).collect::<Vec<_>>().join(" ") + "…";
+            sum = sum
+                .split_whitespace()
+                .take(120)
+                .collect::<Vec<_>>()
+                .join(" ")
+                + "…";
         }
         sum
     };
@@ -436,7 +497,12 @@ pub async fn research_perspectives_flow(
     topic: &str,
     members: &[TeamMember],
     findings_by_perspective: &HashMap<String, Vec<Finding>>,
-) -> (Vec<Perspective>, Vec<PerspectiveAssignment>, Vec<QaExchange>, SourcedOutline) {
+) -> (
+    Vec<Perspective>,
+    Vec<PerspectiveAssignment>,
+    Vec<QaExchange>,
+    SourcedOutline,
+) {
     let perspectives = identify_perspectives(llm, topic, 5).await;
     let assignments = map_perspectives_to_members(&perspectives, members);
     let qa = conduct_qa(&assignments, findings_by_perspective);
@@ -516,7 +582,10 @@ mod tests {
         }
         // at least one proposed persona when more perspectives than members
         let proposed = assignments.iter().filter(|a| a.is_new_proposal).count();
-        assert!(proposed >= 2, "expected proposals when 5 perspectives and 3 members");
+        assert!(
+            proposed >= 2,
+            "expected proposals when 5 perspectives and 3 members"
+        );
     }
 
     #[tokio::test]
@@ -547,7 +616,13 @@ mod tests {
         let members = vec![TeamMember::new("m1", "Alice", "Engineering")];
         let assignments = map_perspectives_to_members(&perspectives, &members);
         let mut map = HashMap::new();
-        map.insert("p1".to_string(), vec![finding_with("Edge computing scales via X", "https://example.com/a")]);
+        map.insert(
+            "p1".to_string(),
+            vec![finding_with(
+                "Edge computing scales via X",
+                "https://example.com/a",
+            )],
+        );
         let qa = conduct_qa(&assignments, &map);
         assert_eq!(qa.len(), 1);
         assert!(qa[0].answer.contains("Edge computing"));
@@ -580,8 +655,16 @@ mod tests {
         // every section has perspective and source and questions visible for user to follow
         for sec in &outline.sections {
             assert!(!sec.perspective_ids.is_empty());
-            assert!(!sec.key_questions.is_empty(), "section {} missing questions", sec.id);
-            assert!(!sec.source_refs.is_empty(), "section {} missing sources", sec.id);
+            assert!(
+                !sec.key_questions.is_empty(),
+                "section {} missing questions",
+                sec.id
+            );
+            assert!(
+                !sec.source_refs.is_empty(),
+                "section {} missing sources",
+                sec.id
+            );
             assert!(!sec.key_points.is_empty());
         }
         // all_sources deduped and sorted
@@ -591,8 +674,13 @@ mod tests {
         assert!(outline.all_sources.len() >= perspectives.len());
         // contributions map members to sections
         for a in &assignments {
-            let contrib = outline.contributions.get(&a.member_id).expect("member missing");
-            assert!(contrib.iter().any(|id| outline.sections.iter().any(|s| &s.id == id)));
+            let contrib = outline
+                .contributions
+                .get(&a.member_id)
+                .expect("member missing");
+            assert!(contrib
+                .iter()
+                .any(|id| outline.sections.iter().any(|s| &s.id == id)));
         }
     }
 
@@ -606,15 +694,34 @@ mod tests {
         let assignments = map_perspectives_to_members(&perspectives, &members);
         // only p1 has findings, p2 will be a gap
         let mut findings = HashMap::new();
-        findings.insert("p1".to_string(), vec![finding_with("Tech finding", "https://a.com")]);
+        findings.insert(
+            "p1".to_string(),
+            vec![finding_with("Tech finding", "https://a.com")],
+        );
         let qa = conduct_qa(&assignments, &findings);
-        let outline = assemble_outline("topic", Some("My Report".into()), &assignments, &findings, &qa);
+        let outline = assemble_outline(
+            "topic",
+            Some("My Report".into()),
+            &assignments,
+            &findings,
+            &qa,
+        );
         assert_eq!(outline.title, "My Report");
         // p2 should contribute a gap
-        assert!(outline.gaps.iter().any(|g| g.contains("Economic") || g.contains("no findings")));
+        assert!(outline
+            .gaps
+            .iter()
+            .any(|g| g.contains("Economic") || g.contains("no findings")));
         // section for p2 still present with open questions
-        let sec2 = outline.sections.iter().find(|s| s.perspective_ids.contains(&"p2".to_string())).unwrap();
-        assert!(sec2.key_points.iter().any(|k| k.contains("Open questions") || k.contains("q2")));
+        let sec2 = outline
+            .sections
+            .iter()
+            .find(|s| s.perspective_ids.contains(&"p2".to_string()))
+            .unwrap();
+        assert!(sec2
+            .key_points
+            .iter()
+            .any(|k| k.contains("Open questions") || k.contains("q2")));
     }
 
     #[tokio::test]
@@ -632,14 +739,20 @@ mod tests {
         for p in &perspectives {
             findings.insert(
                 p.id.clone(),
-                vec![finding_with(&format!("Study on {}", p.name), &format!("https://src/{}.com", p.id))],
+                vec![finding_with(
+                    &format!("Study on {}", p.name),
+                    &format!("https://src/{}.com", p.id),
+                )],
             );
         }
         let qa2 = conduct_qa(&assignments, &findings);
         let outline2 = assemble_outline("CRISPR regulation", None, &assignments, &findings, &qa2);
         assert!(outline2.all_sources.len() >= perspectives.len());
         // QA count = sum of research questions
-        let expected_qa: usize = perspectives.iter().map(|p| p.research_questions.len()).sum();
+        let expected_qa: usize = perspectives
+            .iter()
+            .map(|p| p.research_questions.len())
+            .sum();
         assert_eq!(qa2.len(), expected_qa);
         // perspectives and outline together let user follow questions and contributions
         for sec in &outline2.sections {

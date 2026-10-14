@@ -63,11 +63,7 @@ impl Report {
             covered_perspectives: vec![],
         }
     }
-    pub fn with_perspectives(
-        mut self,
-        expected: Vec<String>,
-        covered: Vec<String>,
-    ) -> Self {
+    pub fn with_perspectives(mut self, expected: Vec<String>, covered: Vec<String>) -> Self {
         self.expected_perspectives = expected;
         self.covered_perspectives = covered;
         self
@@ -93,7 +89,12 @@ pub struct SourceDoc {
 }
 
 impl SourceDoc {
-    pub fn new(id: impl Into<String>, title: impl Into<String>, url: impl Into<String>, content_md: impl Into<String>) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        title: impl Into<String>,
+        url: impl Into<String>,
+        content_md: impl Into<String>,
+    ) -> Self {
         Self {
             id: id.into(),
             title: title.into(),
@@ -147,7 +148,9 @@ impl Challenge {
         description: impl Into<String>,
     ) -> Self {
         let severity = match kind {
-            ChallengeKind::UnsupportedClaim | ChallengeKind::QuoteNotFound | ChallengeKind::Contradiction => "error",
+            ChallengeKind::UnsupportedClaim
+            | ChallengeKind::QuoteNotFound
+            | ChallengeKind::Contradiction => "error",
             _ => "warning",
         };
         Self {
@@ -166,7 +169,10 @@ impl Challenge {
 
 fn normalize(s: &str) -> String {
     // Collapse whitespace, trim, lowercase for robust matching.
-    s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+    s.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
 }
 
 fn quote_exists_in_source(quote: &str, source_content: &str) -> bool {
@@ -279,7 +285,10 @@ pub fn critique_report(report: &Report, sources: &[SourceDoc]) -> Vec<Challenge>
                     next_id(),
                     p.id.clone(),
                     ChallengeKind::UnsupportedClaim,
-                    format!("Paragraph '{}' makes factual claims but has no citations.", p.id),
+                    format!(
+                        "Paragraph '{}' makes factual claims but has no citations.",
+                        p.id
+                    ),
                 ));
             }
         }
@@ -321,7 +330,13 @@ pub fn critique_report(report: &Report, sources: &[SourceDoc]) -> Vec<Challenge>
         let wc = p.text.split_whitespace().count();
         if wc > 5 && wc < 20 {
             let lower = p.text.to_lowercase();
-            let vague = ["some say", "many believe", "it is thought", "probably", "might be"];
+            let vague = [
+                "some say",
+                "many believe",
+                "it is thought",
+                "probably",
+                "might be",
+            ];
             if vague.iter().any(|v| lower.contains(v)) {
                 challenges.push(Challenge::new(
                     next_id(),
@@ -396,13 +411,20 @@ pub fn critique_report(report: &Report, sources: &[SourceDoc]) -> Vec<Challenge>
             // If sources disagree numerically (simple: source contents contain opposite trends)
             // We detect by source docs containing opposing keywords.
             let mut has_opposing = false;
-            let src_texts: Vec<String> = sources.iter().map(|s| s.content_md.to_lowercase()).collect();
+            let src_texts: Vec<String> = sources
+                .iter()
+                .map(|s| s.content_md.to_lowercase())
+                .collect();
             for t in &src_texts {
-                if t.contains("increased") || t.contains("rose") || t.contains("growth") {
-                    if src_texts.iter().any(|u| u.contains("decreased") || u.contains("fell") || u.contains("decline")) {
-                        has_opposing = true;
-                        break;
-                    }
+                if t.contains("increased")
+                    || t.contains("rose")
+                    || t.contains("growth")
+                        && src_texts.iter().any(|u| {
+                            u.contains("decreased") || u.contains("fell") || u.contains("decline")
+                        })
+                {
+                    has_opposing = true;
+                    break;
                 }
             }
             if has_opposing && !has_contradiction_text {
@@ -410,7 +432,9 @@ pub fn critique_report(report: &Report, sources: &[SourceDoc]) -> Vec<Challenge>
                 let mentions_disagreement = report.title.to_lowercase().contains("disagreement")
                     || report.paragraphs.iter().any(|p| {
                         let l = p.text.to_lowercase();
-                        l.contains("disagreement") || l.contains("conflict") || l.contains("mixed evidence")
+                        l.contains("disagreement")
+                            || l.contains("conflict")
+                            || l.contains("mixed evidence")
                     });
                 if !mentions_disagreement {
                     challenges.push(Challenge::new(
@@ -450,7 +474,11 @@ pub struct Resolution {
 }
 
 impl Resolution {
-    pub fn fix(challenge_id: impl Into<String>, note: impl Into<String>, replacement_text: impl Into<String>) -> Self {
+    pub fn fix(
+        challenge_id: impl Into<String>,
+        note: impl Into<String>,
+        replacement_text: impl Into<String>,
+    ) -> Self {
         Self {
             challenge_id: challenge_id.into(),
             kind: ResolutionKind::Fixed,
@@ -533,7 +561,8 @@ pub fn revise_report(
         let ch = challenge_by_id[res.challenge_id.as_str()];
         match res.kind {
             ResolutionKind::Fixed => {
-                if let Some(pid) = (!ch.paragraph_id.is_empty()).then_some(ch.paragraph_id.clone()) {
+                if let Some(pid) = (!ch.paragraph_id.is_empty()).then_some(ch.paragraph_id.clone())
+                {
                     if let Some(&idx) = para_idx.get(&pid) {
                         if let Some(new_text) = &res.replacement_text {
                             revised.paragraphs[idx].text = new_text.clone();
@@ -545,7 +574,10 @@ pub fn revise_report(
                             }
                             changelog_lines.push(format!(
                                 "Fixed {} ({}): {} — updated paragraph '{}'.",
-                                ch.id, ch.kind.as_str(), ch.description, pid
+                                ch.id,
+                                ch.kind.as_str(),
+                                ch.description,
+                                pid
                             ));
                             if !res.note.trim().is_empty() {
                                 changelog_lines.push(format!("  Detail: {}", res.note.trim()));
@@ -564,7 +596,10 @@ pub fn revise_report(
                         revised.covered_perspectives.push(ch.description.clone());
                         changelog_lines.push(format!(
                             "Fixed {} ({}): {} — added paragraph '{}'.",
-                            ch.id, ch.kind.as_str(), ch.description, new_id
+                            ch.id,
+                            ch.kind.as_str(),
+                            ch.description,
+                            new_id
                         ));
                     }
                 }
@@ -572,13 +607,19 @@ pub fn revise_report(
             ResolutionKind::Rebutted => {
                 changelog_lines.push(format!(
                     "Rebutted {} ({}): {} — kept as is. Evidence: {}",
-                    ch.id, ch.kind.as_str(), ch.description, res.note.trim()
+                    ch.id,
+                    ch.kind.as_str(),
+                    ch.description,
+                    res.note.trim()
                 ));
             }
             ResolutionKind::OpenQuestion => {
                 changelog_lines.push(format!(
                     "Open question from {} ({}): {} — {}",
-                    ch.id, ch.kind.as_str(), ch.description, res.note.trim()
+                    ch.id,
+                    ch.kind.as_str(),
+                    ch.description,
+                    res.note.trim()
                 ));
             }
         }
@@ -624,7 +665,12 @@ mod tests {
     use super::*;
 
     fn src(id: &str, content: &str) -> SourceDoc {
-        SourceDoc::new(id, format!("Title {id}"), format!("https://example.com/{id}"), content)
+        SourceDoc::new(
+            id,
+            format!("Title {id}"),
+            format!("https://example.com/{id}"),
+            content,
+        )
     }
 
     fn para(id: &str, text: &str, quotes: Vec<(&str, &str)>) -> Paragraph {
@@ -652,10 +698,7 @@ mod tests {
     #[test]
     fn factcheck_quote_not_found_is_flagged() {
         let sources = vec![src("s1", "The sky is blue.")];
-        let report = Report::new(
-            "Test",
-            vec![para("p1", "Claim.", vec![("s1", "rose 12%")])],
-        );
+        let report = Report::new("Test", vec![para("p1", "Claim.", vec![("s1", "rose 12%")])]);
         let results = fact_check_report(&report, &sources);
         assert_eq!(results.len(), 1);
         assert!(!results[0].supported);
@@ -667,10 +710,7 @@ mod tests {
     #[test]
     fn factcheck_missing_source_is_flagged() {
         let sources = vec![src("s1", "hello")];
-        let report = Report::new(
-            "Test",
-            vec![para("p1", "Claim.", vec![("s2", "hello")])],
-        );
+        let report = Report::new("Test", vec![para("p1", "Claim.", vec![("s2", "hello")])]);
         let results = fact_check_report(&report, &sources);
         assert!(!results[0].supported);
         assert!(results[0].reason.contains("not found in store"));
@@ -698,16 +738,17 @@ mod tests {
 
     #[test]
     fn factcheck_multiple_citations_per_paragraph() {
-        let sources = vec![
-            src("s1", "alpha beta gamma"),
-            src("s2", "delta epsilon"),
-        ];
+        let sources = vec![src("s1", "alpha beta gamma"), src("s2", "delta epsilon")];
         let report = Report::new(
             "Test",
             vec![para(
                 "p1",
                 "Both claims.",
-                vec![("s1", "alpha beta"), ("s2", "delta epsilon"), ("s2", "missing quote")],
+                vec![
+                    ("s1", "alpha beta"),
+                    ("s2", "delta epsilon"),
+                    ("s2", "missing quote"),
+                ],
             )],
         );
         let results = fact_check_report(&report, &sources);
@@ -732,7 +773,9 @@ mod tests {
         );
         let challenges = critique_report(&report, &sources);
         assert!(
-            challenges.iter().any(|c| c.kind == ChallengeKind::UnsupportedClaim && c.paragraph_id == "p1"),
+            challenges
+                .iter()
+                .any(|c| c.kind == ChallengeKind::UnsupportedClaim && c.paragraph_id == "p1"),
             "got {challenges:?}"
         );
     }
@@ -742,10 +785,16 @@ mod tests {
         let sources = vec![src("s1", "unrelated content")];
         let report = Report::new(
             "Test",
-            vec![para("p1", "Claim with bad quote.", vec![("s1", "not in source")])],
+            vec![para(
+                "p1",
+                "Claim with bad quote.",
+                vec![("s1", "not in source")],
+            )],
         );
         let challenges = critique_report(&report, &sources);
-        assert!(challenges.iter().any(|c| c.kind == ChallengeKind::QuoteNotFound));
+        assert!(challenges
+            .iter()
+            .any(|c| c.kind == ChallengeKind::QuoteNotFound));
     }
 
     #[test]
@@ -770,10 +819,16 @@ mod tests {
         let sources = vec![];
         let report = Report::new(
             "Test",
-            vec![para("p1", "Many believe it might be good, some say it is useful.", vec![])],
+            vec![para(
+                "p1",
+                "Many believe it might be good, some say it is useful.",
+                vec![],
+            )],
         );
         let challenges = critique_report(&report, &sources);
-        assert!(challenges.iter().any(|c| c.kind == ChallengeKind::WeakReasoning));
+        assert!(challenges
+            .iter()
+            .any(|c| c.kind == ChallengeKind::WeakReasoning));
     }
 
     #[test]
@@ -785,13 +840,19 @@ mod tests {
         let report = Report::new(
             "Test",
             vec![
-                para("p1", "Revenue trends show changes.", vec![("s1", "increased")]),
+                para(
+                    "p1",
+                    "Revenue trends show changes.",
+                    vec![("s1", "increased")],
+                ),
                 para("p2", "More on revenue.", vec![("s2", "decreased")]),
             ],
         );
         let challenges = critique_report(&report, &sources);
         assert!(
-            challenges.iter().any(|c| c.kind == ChallengeKind::Contradiction),
+            challenges
+                .iter()
+                .any(|c| c.kind == ChallengeKind::Contradiction),
             "expected contradiction, got {challenges:?}"
         );
     }
@@ -802,7 +863,11 @@ mod tests {
         let report = Report::new(
             "Test",
             vec![
-                para("p1", "Good paragraph with citation.", vec![("s1", "hello world")]),
+                para(
+                    "p1",
+                    "Good paragraph with citation.",
+                    vec![("s1", "hello world")],
+                ),
                 para("p2", "The market rose 99% with no source.", vec![]),
             ],
         );
@@ -838,7 +903,12 @@ mod tests {
     #[test]
     fn factcheck_revision_rebut_and_open_question_keep_text() {
         let report = Report::new("Test", vec![para("p1", "Some claim.", vec![])]);
-        let challenges = vec![Challenge::new("ch1", "p1", ChallengeKind::WeakReasoning, "vague")];
+        let challenges = vec![Challenge::new(
+            "ch1",
+            "p1",
+            ChallengeKind::WeakReasoning,
+            "vague",
+        )];
         let rebut = Resolution::rebut("ch1", "Evidence in source s1 line 5");
         let rev = revise_report(&report, &challenges, &[rebut]).unwrap();
         assert_eq!(rev.revised.paragraphs[0].text, "Some claim.");
@@ -853,7 +923,12 @@ mod tests {
     #[test]
     fn factcheck_revision_diff_shows_changes() {
         let report = Report::new("Orig", vec![para("p1", "Line one.", vec![])]);
-        let challenges = vec![Challenge::new("ch1", "p1", ChallengeKind::UnsupportedClaim, "needs source")];
+        let challenges = vec![Challenge::new(
+            "ch1",
+            "p1",
+            ChallengeKind::UnsupportedClaim,
+            "needs source",
+        )];
         let fix = Resolution::fix("ch1", "fix", "Line one revised with source.");
         let rev = revise_report(&report, &challenges, &[fix]).unwrap();
         assert!(rev.diff.contains("-Line one.") || rev.diff.contains("- Line one."));
@@ -863,7 +938,12 @@ mod tests {
     #[test]
     fn factcheck_revision_error_on_unknown_challenge() {
         let report = Report::new("T", vec![para("p1", "text", vec![])]);
-        let challenges = vec![Challenge::new("ch1", "p1", ChallengeKind::UnsupportedClaim, "x")];
+        let challenges = vec![Challenge::new(
+            "ch1",
+            "p1",
+            ChallengeKind::UnsupportedClaim,
+            "x",
+        )];
         let bad = Resolution::fix("ch999", "note", "new text");
         let err = revise_report(&report, &challenges, &[bad]).unwrap_err();
         assert!(err.to_string().contains("ch999"));
@@ -884,7 +964,9 @@ mod tests {
         let resolutions: Vec<Resolution> = challenges
             .iter()
             .map(|c| match c.kind {
-                ChallengeKind::UnsupportedClaim => Resolution::fix(c.id.clone(), "added evidence", "revised text"),
+                ChallengeKind::UnsupportedClaim => {
+                    Resolution::fix(c.id.clone(), "added evidence", "revised text")
+                }
                 _ => Resolution::open_question(c.id.clone(), "needs follow-up"),
             })
             .collect();

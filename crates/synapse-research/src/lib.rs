@@ -6,11 +6,11 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-pub mod research_loop;
 pub mod browser;
-pub mod reader;
-pub mod perspectives;
 pub mod factcheck;
+pub mod perspectives;
+pub mod reader;
+pub mod research_loop;
 
 use serde::{Deserialize, Serialize};
 
@@ -233,18 +233,13 @@ impl SearchProvider for KeyedProvider {
 // Search mode
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum SearchMode {
+    #[default]
     Auto,
     Multi,
     Random,
-}
-
-impl Default for SearchMode {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -293,6 +288,7 @@ impl RateLimiter {
 pub struct CircuitBreaker {
     failure_threshold: usize,
     cooldown: Duration,
+    #[allow(clippy::type_complexity)]
     failures: Arc<Mutex<HashMap<String, (usize, Option<Instant>)>>>,
 }
 

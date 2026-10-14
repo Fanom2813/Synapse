@@ -166,7 +166,10 @@ impl BuilderUiState {
         }
         self.test_log.push(("user".into(), t.into()));
         let reply = if let Some(d) = &self.draft {
-            format!("{} ({} — AI perspective, cited) replies: you said \"{t}\"", d.name, d.role)
+            format!(
+                "{} ({} — AI perspective, cited) replies: you said \"{t}\"",
+                d.name, d.role
+            )
         } else {
             format!("(no draft) you said \"{t}\"")
         };
@@ -180,7 +183,10 @@ impl BuilderUiState {
 
     pub fn save(&mut self, store: &mut synapse_core::AgentStore) -> Result<String, String> {
         self.apply_edits();
-        let draft = self.draft.clone().ok_or_else(|| "no draft to save".to_string())?;
+        let draft = self
+            .draft
+            .clone()
+            .ok_or_else(|| "no draft to save".to_string())?;
         let issues = validate_guardrails(&draft);
         if !issues.is_empty() {
             return Err(issues.join("; "));
@@ -220,7 +226,12 @@ impl BuilderUiState {
                 title: "Refreshed source".into(),
                 quote: "Updated finding after refresh.".into(),
             };
-            let diff = s.refresh(vec![extra].into_iter().chain(new_sources.into_iter().take(1)).collect());
+            let diff = s.refresh(
+                vec![extra]
+                    .into_iter()
+                    .chain(new_sources.into_iter().take(1))
+                    .collect(),
+            );
             if let Some(d) = diff {
                 self.last_diff = Some(d);
                 self.draft = s.draft.clone();
@@ -286,7 +297,10 @@ impl BuilderUiState {
     }
 
     pub fn pending_proposals(&self) -> Vec<&AgentProposal> {
-        self.proposals.iter().filter(|p| p.status == ProposalStatus::Pending).collect()
+        self.proposals
+            .iter()
+            .filter(|p| p.status == ProposalStatus::Pending)
+            .collect()
     }
 }
 
@@ -301,7 +315,9 @@ mod agent_builder_ui_tests {
         assert!(!ui.can_start());
         assert!(!ui.start());
         assert!(ui.error.is_some());
-        ui.set_description("a Ugandan agent who understands how people in Uganda think, talk and decide");
+        ui.set_description(
+            "a Ugandan agent who understands how people in Uganda think, talk and decide",
+        );
         assert!(ui.can_start());
         assert!(ui.start());
         assert_eq!(ui.step, BuilderStep::Clarify);
@@ -345,7 +361,11 @@ mod agent_builder_ui_tests {
         assert_eq!(ui.step, BuilderStep::Saved);
         assert_eq!(ui.saved_agent_id.as_deref(), Some(id.as_str()));
         assert_eq!(store.len(), 1);
-        assert!(store.get(&id).unwrap().instructions.contains("AI perspective"));
+        assert!(store
+            .get(&id)
+            .unwrap()
+            .instructions
+            .contains("AI perspective"));
     }
 
     #[test]
@@ -366,7 +386,10 @@ mod agent_builder_ui_tests {
     fn agent_builder_ui_proposal_approval_gated_never_auto_adds() {
         let mut ui = BuilderUiState::new();
         let mut store = synapse_core::AgentStore::new();
-        let p = propose_agent("we need someone who knows Ugandan mobile-money regulation", false);
+        let p = propose_agent(
+            "we need someone who knows Ugandan mobile-money regulation",
+            false,
+        );
         assert_eq!(p.status, ProposalStatus::Pending);
         let pid = p.id.clone();
         ui.add_proposal(p);
@@ -381,7 +404,10 @@ mod agent_builder_ui_tests {
         let pid2 = p2.id.clone();
         ui.add_proposal(p2);
         assert!(ui.deny_proposal(&pid2));
-        assert_eq!(ui.proposals.iter().find(|p| p.id == pid2).unwrap().status, ProposalStatus::Denied);
+        assert_eq!(
+            ui.proposals.iter().find(|p| p.id == pid2).unwrap().status,
+            ProposalStatus::Denied
+        );
         assert_eq!(store.len(), 1); // not added
     }
 
@@ -395,7 +421,8 @@ mod agent_builder_ui_tests {
         ui.start();
         ui.continue_from_clarify();
         // Build team for goal (3 proposals)
-        for p in synapse_core::agent_builder::build_team_for_goal("research Ugandan fintech", false) {
+        for p in synapse_core::agent_builder::build_team_for_goal("research Ugandan fintech", false)
+        {
             ui.add_proposal(p);
         }
         assert_eq!(ui.proposals.len(), 3);

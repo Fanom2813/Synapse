@@ -339,6 +339,7 @@ pub trait Fetcher: Send + Sync {
 }
 
 // Real http fetcher
+#[allow(dead_code)]
 pub struct HttpFetcher {
     client: reqwest::Client,
     max_bytes: usize,
@@ -632,7 +633,7 @@ impl Reader {
                 .await;
         }
 
-        let mut source = Source {
+        let source = Source {
             id: uuid_like(url),
             project_id: project_id.to_string(),
             url: url.to_string(),
@@ -709,7 +710,7 @@ impl Reader {
     }
 }
 
-fn is_allowed_by_robots(robots_txt: &str, url: &str) -> bool {
+fn is_allowed_by_robots(robots_txt: &str, _url: &str) -> bool {
     // Use texting_robots crate
     use texting_robots::Robot;
     let robot = Robot::new("Synapse", robots_txt.as_bytes()).ok();
@@ -759,7 +760,7 @@ fn extract_title_from_url(url: &str) -> String {
             if path.is_empty() {
                 u.host_str().map(|s| s.to_string())
             } else {
-                Some(path.split('/').last().unwrap_or(&path).to_string())
+                Some(path.rsplit('/').next().unwrap_or(&path).to_string())
             }
         })
         .unwrap_or_else(|| url.to_string())
@@ -804,6 +805,7 @@ mod tests {
                 .unwrap()
                 .insert(url.to_string(), Err(err));
         }
+        #[allow(dead_code)]
         fn call_count(&self) -> usize {
             self.calls.lock().unwrap().len()
         }
@@ -967,7 +969,7 @@ mod tests {
         impl Fetcher for LargeFetcher {
             async fn fetch(
                 &self,
-                url: &str,
+                _url: &str,
                 _etag: Option<&str>,
             ) -> Result<FetchResponse, ReaderError> {
                 let body = vec![b'a'; self.max + 1];

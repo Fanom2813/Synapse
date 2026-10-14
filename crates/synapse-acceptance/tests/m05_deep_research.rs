@@ -10,16 +10,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use synapse_research::factcheck::{
-    critique_report, fact_check_report, revise_report, ChallengeKind, Citation, Paragraph,
-    Report, Resolution, SourceDoc,
+    critique_report, fact_check_report, revise_report, ChallengeKind, Citation, Paragraph, Report,
+    Resolution, SourceDoc,
 };
 use synapse_research::perspectives::{
     assemble_outline, conduct_qa, identify_perspectives, map_perspectives_to_members,
     MockPerspectiveLlm, TeamMember,
 };
 use synapse_research::research_loop::{
-    ExtractOutput, Finding, Learning, MockLlm, MockReader, PageReader, ResearchConfig,
-    ResearchLlm, ResearchLoop,
+    ExtractOutput, Finding, Learning, MockLlm, MockReader, PageReader, ResearchConfig, ResearchLlm,
+    ResearchLoop,
 };
 use synapse_research::{MockSearch, SearchHit, SearchProvider};
 
@@ -67,17 +67,23 @@ async fn m05_research_loop_search_read_follow_up_cites_sources() {
         hit("https://c.example/solar-followup"),
     ];
     let search = Arc::new(MockSearch::new("mock", hits)) as Arc<dyn SearchProvider>;
-    let reader = Arc::new(
-        MockReader::new().with_pages(vec![
-            ("https://a.example/solar", "Solar A", "Solar output rose 12% in 2024."),
-            ("https://b.example/solar", "Solar B", "Panel costs fell 8% year over year."),
-            (
-                "https://c.example/solar-followup",
-                "Solar C",
-                "Grid storage increased alongside solar growth.",
-            ),
-        ]),
-    ) as Arc<dyn PageReader>;
+    let reader = Arc::new(MockReader::new().with_pages(vec![
+        (
+            "https://a.example/solar",
+            "Solar A",
+            "Solar output rose 12% in 2024.",
+        ),
+        (
+            "https://b.example/solar",
+            "Solar B",
+            "Panel costs fell 8% year over year.",
+        ),
+        (
+            "https://c.example/solar-followup",
+            "Solar C",
+            "Grid storage increased alongside solar growth.",
+        ),
+    ])) as Arc<dyn PageReader>;
 
     let llm = MockLlm::new();
     llm.push_queries(vec!["solar costs".into(), "solar output".into()]);
@@ -116,11 +122,20 @@ async fn m05_research_loop_search_read_follow_up_cites_sources() {
         assert!(!l.sources.is_empty(), "learning without source: {l:?}");
     }
     // findings cite the sources they visited
-    assert!(finding.citations.contains(&"https://a.example/solar".to_string()));
-    assert!(finding.citations.contains(&"https://c.example/solar-followup".to_string()));
-    assert!(finding.visited.contains(&"https://c.example/solar-followup".to_string()));
+    assert!(finding
+        .citations
+        .contains(&"https://a.example/solar".to_string()));
+    assert!(finding
+        .citations
+        .contains(&"https://c.example/solar-followup".to_string()));
+    assert!(finding
+        .visited
+        .contains(&"https://c.example/solar-followup".to_string()));
     // follow-up learning made it into the findings
-    assert!(finding.learnings.iter().any(|l| l.text.contains("Grid storage")));
+    assert!(finding
+        .learnings
+        .iter()
+        .any(|l| l.text.contains("Grid storage")));
     assert!(finding.word_count() <= 320);
 }
 
@@ -165,8 +180,16 @@ async fn m05_perspectives_and_sourced_outline() {
     assert!(outline.title.contains("solar energy trends"));
     for sec in &outline.sections {
         assert!(!sec.perspective_ids.is_empty());
-        assert!(!sec.key_questions.is_empty(), "section {} missing questions", sec.id);
-        assert!(!sec.source_refs.is_empty(), "section {} missing sources", sec.id);
+        assert!(
+            !sec.key_questions.is_empty(),
+            "section {} missing questions",
+            sec.id
+        );
+        assert!(
+            !sec.source_refs.is_empty(),
+            "section {} missing sources",
+            sec.id
+        );
         assert!(!sec.key_points.is_empty());
         assert!(!sec.contributor_member_ids.is_empty());
     }
@@ -232,11 +255,17 @@ fn m05_report_critique_citation_check_and_revision() {
     // critique: unsupported claim (p2), quote not found (p3), missing perspective
     let challenges = critique_report(&report, &sources);
     assert!(
-        challenges.iter().any(|c| c.kind == ChallengeKind::UnsupportedClaim && c.paragraph_id == "p2"),
+        challenges
+            .iter()
+            .any(|c| c.kind == ChallengeKind::UnsupportedClaim && c.paragraph_id == "p2"),
         "got {challenges:?}"
     );
-    assert!(challenges.iter().any(|c| c.kind == ChallengeKind::QuoteNotFound));
-    assert!(challenges.iter().any(|c| c.kind == ChallengeKind::MissingPerspective));
+    assert!(challenges
+        .iter()
+        .any(|c| c.kind == ChallengeKind::QuoteNotFound));
+    assert!(challenges
+        .iter()
+        .any(|c| c.kind == ChallengeKind::MissingPerspective));
 
     // revision: fix p2, rebut the quote challenge with evidence note, keep one open question
     let unsupported = challenges
@@ -260,11 +289,21 @@ fn m05_report_critique_citation_check_and_revision() {
             "Scoped the claim to the sourced figure.",
             "Solar output rose 12% in 2024 according to grid data.",
         ),
-        Resolution::rebut(quote.id.clone(), "Quote wording matches source s2 line 1 after normalization review"),
-        Resolution::open_question(missing.id.clone(), "Need an economist to cover the Economic angle"),
+        Resolution::rebut(
+            quote.id.clone(),
+            "Quote wording matches source s2 line 1 after normalization review",
+        ),
+        Resolution::open_question(
+            missing.id.clone(),
+            "Need an economist to cover the Economic angle",
+        ),
     ];
     let rev = revise_report(&report, &challenges, &resolutions).expect("revise");
-    assert!(rev.revised.paragraphs.iter().any(|p| p.text.contains("rose 12%")));
+    assert!(rev
+        .revised
+        .paragraphs
+        .iter()
+        .any(|p| p.text.contains("rose 12%")));
     assert!(rev.changelog.contains(&unsupported.id));
     assert!(rev.changelog.contains("Fixed"));
     assert!(rev.changelog.contains("Rebutted"));

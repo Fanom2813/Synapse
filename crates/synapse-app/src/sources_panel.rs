@@ -143,8 +143,8 @@ pub fn normalize_url(raw: &str) -> String {
     while s.ends_with('/') && !s.ends_with("://") {
         // Don't strip the "//" of the scheme or the single root slash.
         let without = s.trim_end_matches('/');
-        let is_root = without.contains("://")
-            && !without.split("://").nth(1).unwrap_or("").contains('/');
+        let is_root =
+            without.contains("://") && !without.split("://").nth(1).unwrap_or("").contains('/');
         if is_root {
             break;
         }
@@ -330,9 +330,7 @@ impl SourcesPanel {
 
     /// Citation previews for a source id.
     pub fn citation_previews(&self, id: &str) -> &[CitationPreview] {
-        self.get(id)
-            .map(|s| s.citations.as_slice())
-            .unwrap_or(&[])
+        self.get(id).map(|s| s.citations.as_slice()).unwrap_or(&[])
     }
 
     pub fn select(&mut self, id: &str) -> bool {
@@ -372,14 +370,14 @@ mod sources_panel_tests {
 
     fn sample() -> (Vec<PanelSource>, Vec<PanelMessage>) {
         let sources = vec![
-            PanelSource::new("s1", "https://example.com/report", "Report", "Peer-reviewed"),
-            // Duplicate URL (trailing slash + tracking params): must dedupe.
             PanelSource::new(
-                "s2",
-                "https://example.com/report/?utm_source=x#sec",
-                "",
-                "",
+                "s1",
+                "https://example.com/report",
+                "Report",
+                "Peer-reviewed",
             ),
+            // Duplicate URL (trailing slash + tracking params): must dedupe.
+            PanelSource::new("s2", "https://example.com/report/?utm_source=x#sec", "", ""),
             PanelSource::new("s3", "https://other.org/a", "Other", ""),
         ];
         let messages = vec![
@@ -438,10 +436,7 @@ mod sources_panel_tests {
         let mut panel = SourcesPanel::new();
         panel.rebuild(&sources, &messages);
         // Open in browser: canonical URL (alias resolves too).
-        assert_eq!(
-            panel.open_url("s2"),
-            Some("https://example.com/report")
-        );
+        assert_eq!(panel.open_url("s2"), Some("https://example.com/report"));
         assert!(panel.open_url("missing").is_none());
         // Select + navigate.
         assert!(panel.select("s3"));
@@ -461,12 +456,19 @@ mod sources_panel_tests {
         // Citation for an unknown source synthesizes a placeholder row.
         panel.rebuild(
             &[],
-            &[PanelMessage::new("m9", "max")
-                .with_citations(vec![PanelCitation::new("https://new.example/x", "New claim.")])],
+            &[
+                PanelMessage::new("m9", "max").with_citations(vec![PanelCitation::new(
+                    "https://new.example/x",
+                    "New claim.",
+                )]),
+            ],
         );
         assert_eq!(panel.list().len(), 1);
         assert_eq!(panel.list()[0].used_by, vec!["max".to_string()]);
-        assert_eq!(panel.open_url(panel.list()[0].id.clone().as_str()), Some("https://new.example/x"));
+        assert_eq!(
+            panel.open_url(panel.list()[0].id.clone().as_str()),
+            Some("https://new.example/x")
+        );
     }
 
     #[test]

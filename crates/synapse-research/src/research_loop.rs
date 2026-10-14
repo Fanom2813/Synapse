@@ -8,8 +8,8 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 
-use crate::reader::{Source, SourceCache};
-use crate::{SearchHit, SearchProvider};
+use crate::reader::Source;
+use crate::SearchProvider;
 
 // ---------------------------------------------------------------------------
 // Config & budgets
@@ -124,18 +124,9 @@ pub struct Status {
 
 #[async_trait]
 pub trait ResearchLlm: Send + Sync {
-    async fn generate_queries(
-        &self,
-        query: &str,
-        learnings: &[Learning],
-        n: usize,
-    ) -> Vec<String>;
+    async fn generate_queries(&self, query: &str, learnings: &[Learning], n: usize) -> Vec<String>;
 
-    async fn extract(
-        &self,
-        pages: &[Source],
-        query: &str,
-    ) -> ExtractOutput;
+    async fn extract(&self, pages: &[Source], query: &str) -> ExtractOutput;
 }
 
 // Mock LLM for tests
@@ -153,11 +144,11 @@ impl MockLlm {
             query_calls: Mutex::new(vec![]),
         }
     }
-    pub fn with_queries(mut self, qs: Vec<Vec<String>>) -> Self {
+    pub fn with_queries(self, qs: Vec<Vec<String>>) -> Self {
         *self.queries.lock().unwrap() = qs;
         self
     }
-    pub fn with_extracts(mut self, es: Vec<ExtractOutput>) -> Self {
+    pub fn with_extracts(self, es: Vec<ExtractOutput>) -> Self {
         *self.extracts.lock().unwrap() = es;
         self
     }
@@ -180,7 +171,12 @@ impl Default for MockLlm {
 
 #[async_trait]
 impl ResearchLlm for MockLlm {
-    async fn generate_queries(&self, query: &str, _learnings: &[Learning], n: usize) -> Vec<String> {
+    async fn generate_queries(
+        &self,
+        query: &str,
+        _learnings: &[Learning],
+        n: usize,
+    ) -> Vec<String> {
         self.query_calls.lock().unwrap().push(query.to_string());
         let mut q = self.queries.lock().unwrap();
         if !q.is_empty() {
@@ -192,7 +188,9 @@ impl ResearchLlm for MockLlm {
             }
             v
         } else {
-            (0..n).map(|i| format!("{query} variant {}", i + 1)).collect()
+            (0..n)
+                .map(|i| format!("{query} variant {}", i + 1))
+                .collect()
         }
     }
     async fn extract(&self, pages: &[Source], _query: &str) -> ExtractOutput {
@@ -253,6 +251,12 @@ pub struct MockReader {
     calls: Mutex<Vec<String>>,
 }
 
+impl Default for MockReader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockReader {
     pub fn new() -> Self {
         Self {
@@ -261,13 +265,13 @@ impl MockReader {
             calls: Mutex::new(vec![]),
         }
     }
-    pub fn with_page(mut self, url: &str, title: &str, md: &str) -> Self {
+    pub fn with_page(self, url: &str, title: &str, md: &str) -> Self {
         let mut s = Source::new(url, title, md);
         s.url = url.to_string();
         self.pages.lock().unwrap().insert(url.to_string(), s);
         self
     }
-    pub fn with_pages(mut self, pages: Vec<(&str, &str, &str)>) -> Self {
+    pub fn with_pages(self, pages: Vec<(&str, &str, &str)>) -> Self {
         for (u, t, m) in pages {
             let mut s = Source::new(u, t, m);
             s.url = u.to_string();
@@ -300,6 +304,7 @@ impl PageReader for MockReader {
 }
 
 // adapter over real Reader with cache
+#[allow(dead_code)]
 pub struct CacheReader {
     inner: Arc<MockReader>,
 }
@@ -365,7 +370,7 @@ impl ResearchLoop {
         let search_budget = self.config.max_searches;
 
         // internal recursive
-        let mut initial_query = query.to_string();
+        let initial_query = query.to_string();
         // we do iterative depth layers
         // depth D means D levels; breadth halves each level (ceil)
         let mut current_learnings = Vec::new();
@@ -417,7 +422,10 @@ impl ResearchLoop {
                 query.to_string()
             } else {
                 // use first follow_up as base or original
-                all_follow_ups.first().cloned().unwrap_or_else(|| query.to_string())
+                all_follow_ups
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| query.to_string())
             };
 
             self.emit(Status {
@@ -564,7 +572,7 @@ impl ResearchLoop {
                 // not budget exhaustion, just gap
             }
             // prepare next breadth
-            breadth = (breadth + 1) / 2; // ceil(B/2)
+            breadth = breadth.div_ceil(2); // ceil(B/2)
             if breadth == 0 {
                 breadth = 1;
             }
@@ -637,7 +645,7 @@ fn compress_learnings(learnings: &[Learning], gaps: &[String]) -> String {
     if wc > 300 {
         let words: Vec<String> = text.split_whitespace().map(|s| s.to_string()).collect();
         text = words[..300].join(" ");
-        text.push_str("…");
+        text.push('…');
     }
     if !gaps.is_empty() {
         let gap_note = format!(" Gaps: {}.", gaps.join("; "));
@@ -692,7 +700,7 @@ mod tests {
     ) -> ResearchLoop {
         let search = Arc::new(MockSearch::new("mock", hits)) as Arc<dyn SearchProvider>;
         let reader = Arc::new(MockReader::new().with_pages(pages)) as Arc<dyn PageReader>;
-        let mut llm = MockLlm::new();
+        let llm = MockLlm::new();
         // push queries and extracts via inner fields
         for q in queries {
             llm.push_queries(q);
@@ -754,16 +762,17 @@ mod tests {
             max_time: Duration::from_secs(5),
             top_k_per_query: 1,
         };
-        let hits = vec![hit("https://a.com"), hit("https://b.com"), hit("https://c.com")];
+        let hits = vec![
+            hit("https://a.com"),
+            hit("https://b.com"),
+            hit("https://c.com"),
+        ];
         let pages = vec![
             ("https://a.com", "A", "Content A"),
             ("https://b.com", "B", "Content B"),
             ("https://c.com", "C", "Content C"),
         ];
-        let queries = vec![
-            vec!["q1".into(), "q2".into()],
-            vec!["follow1".into()],
-        ];
+        let queries = vec![vec!["q1".into(), "q2".into()], vec!["follow1".into()]];
         let extracts = vec![
             ExtractOutput {
                 learnings: vec![Learning {
@@ -803,7 +812,11 @@ mod tests {
             max_time: Duration::from_secs(5),
             top_k_per_query: 1,
         };
-        let hits = vec![hit("https://a.com"), hit("https://b.com"), hit("https://c.com")];
+        let hits = vec![
+            hit("https://a.com"),
+            hit("https://b.com"),
+            hit("https://c.com"),
+        ];
         let pages = vec![
             ("https://a.com", "A", "Content A"),
             ("https://b.com", "B", "Content B"),
@@ -844,7 +857,9 @@ mod tests {
         let extracts = vec![];
         let lp = default_setup(hits, pages, queries, extracts, cfg);
         let finding = lp.run("time test").await;
-        assert!(finding.gaps.iter().any(|g| g.contains("time budget") || g.contains("budget at 90%") || g.contains("no learnings")));
+        assert!(finding.gaps.iter().any(|g| g.contains("time budget")
+            || g.contains("budget at 90%")
+            || g.contains("no learnings")));
         assert!(finding.budget_exhausted || !finding.gaps.is_empty());
     }
 
@@ -859,10 +874,16 @@ mod tests {
         };
         let hits = vec![hit("https://a.com")];
         // create very long content: 500 words
-        let long_text = (0..500).map(|i| format!("word{i}")).collect::<Vec<_>>().join(" ");
+        let long_text = (0..500)
+            .map(|i| format!("word{i}"))
+            .collect::<Vec<_>>()
+            .join(" ");
         let pages = vec![("https://a.com", "A", long_text.as_str())];
         // mock llm will produce a 500-word learning
-        let very_long = (0..500).map(|i| format!("w{i}")).collect::<Vec<_>>().join(" ");
+        let very_long = (0..500)
+            .map(|i| format!("w{i}"))
+            .collect::<Vec<_>>()
+            .join(" ");
         let queries = vec![vec!["q".into()]];
         let extracts = vec![ExtractOutput {
             learnings: vec![Learning {
@@ -892,20 +913,13 @@ mod tests {
         // We'll craft a test with max_searches 10 and breadth 4; after 9, it should beast mode
         // Instead test directly: do 9 searches first via loop with budget 10, then second run?
         // Simpler: run with breadth 10 and budget 10, after 9 it should stop before 10th if check happens before next query
-        let hits = (0..10).map(|i| hit(&format!("https://a{i}.com"))).collect::<Vec<_>>();
-        let pages: Vec<(&str, &str, &str)> = (0..10)
-            .map(|i| {
-                // leak to get static str? use owned via MockReader fallback instead
-                // Use simple pages via MockReader synthetic fallback
-                (Box::leak(format!("https://a{i}.com").into_boxed_str()) as &str,
-                 Box::leak(format!("A{i}").into_boxed_str()) as &str,
-                 Box::leak(format!("Content {i}").into_boxed_str()) as &str)
-            })
-            .collect();
+        let hits = (0..10)
+            .map(|i| hit(&format!("https://a{i}.com")))
+            .collect::<Vec<_>>();
         // Easier: use MockReader with no explicit pages, it synthesizes
         let search = Arc::new(MockSearch::new("mock", hits)) as Arc<dyn SearchProvider>;
         let reader = Arc::new(MockReader::new()) as Arc<dyn PageReader>;
-        let mut llm = MockLlm::new();
+        let llm = MockLlm::new();
         llm.push_queries((0..10).map(|i| format!("q{i}")).collect());
         for _ in 0..10 {
             llm.push_extract(ExtractOutput {
@@ -924,7 +938,10 @@ mod tests {
         assert!(finding.searches_used <= 10);
         if finding.searches_used == 9 {
             assert!(finding.budget_exhausted);
-            assert!(finding.gaps.iter().any(|g| g.contains("90%") || g.contains("beast")));
+            assert!(finding
+                .gaps
+                .iter()
+                .any(|g| g.contains("90%") || g.contains("beast")));
         }
     }
 
@@ -960,7 +977,14 @@ mod tests {
         let lp = default_setup(hits.clone(), pages, queries, extracts, cfg);
         let finding = lp.run("dup test").await;
         // second query should find no new pages (visited) -> gap
-        assert!(finding.visited.iter().filter(|u| *u == "https://dup.com").count() == 1);
+        assert!(
+            finding
+                .visited
+                .iter()
+                .filter(|u| *u == "https://dup.com")
+                .count()
+                == 1
+        );
         // learnings deduped
         assert_eq!(finding.learnings.len(), 1);
     }

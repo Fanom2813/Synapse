@@ -418,9 +418,7 @@ impl EditorSheet {
 
     /// Agent being edited, if the sheet targets an existing one.
     pub fn open_agent_id(&self) -> Option<&str> {
-        self.open_id
-            .as_ref()
-            .and_then(|inner| inner.as_deref())
+        self.open_id.as_ref().and_then(|inner| inner.as_deref())
     }
 
     /// Save the open sheet and close it; the roster now includes the row.
@@ -466,7 +464,11 @@ mod agent_editor_tests {
         e.max_tokens = Some(1024);
         e.thinking = ThinkingLevel::Medium;
         e.tools = vec!["web_search".into(), "read_url".into()];
-        e.permissions = vec![PermissionRule::new("shell", "cargo *", PermissionEffect::Ask)];
+        e.permissions = vec![PermissionRule::new(
+            "shell",
+            "cargo *",
+            PermissionEffect::Ask,
+        )];
         e.notes = "Prefers primary sources.".into();
         e
     }

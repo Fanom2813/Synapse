@@ -4,6 +4,7 @@ pub mod app_dirs;
 pub mod empty;
 pub mod icons;
 pub mod layout;
+pub mod lifecycle;
 pub mod logging;
 pub mod runtime;
 pub mod settings;

@@ -6,6 +6,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+pub mod reader;
+
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -26,7 +28,11 @@ pub struct SearchHit {
 }
 
 impl SearchHit {
-    pub fn new(url: impl Into<String>, title: impl Into<String>, snippet: impl Into<String>) -> Self {
+    pub fn new(
+        url: impl Into<String>,
+        title: impl Into<String>,
+        snippet: impl Into<String>,
+    ) -> Self {
         Self {
             url: url.into(),
             title: title.into(),
@@ -378,7 +384,11 @@ pub fn reciprocal_rank_fusion(results: Vec<Vec<SearchHit>>, k: f64) -> Vec<Searc
         })
         .collect();
 
-    merged.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    merged.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     // dedupe by URL is inherent (hash map)
     merged
 }
@@ -428,7 +438,10 @@ impl SearchService {
     }
 
     pub fn provider_names(&self) -> Vec<String> {
-        self.providers.iter().map(|p| p.name().to_string()).collect()
+        self.providers
+            .iter()
+            .map(|p| p.name().to_string())
+            .collect()
     }
 
     pub async fn search(&self, query: &str) -> Result<Vec<SearchHit>, SearchError> {
@@ -470,7 +483,9 @@ impl SearchService {
                 }
             }
         }
-        Err(SearchError::AllFailed(last_err.unwrap_or_else(|| "no provider answered".into())))
+        Err(SearchError::AllFailed(
+            last_err.unwrap_or_else(|| "no provider answered".into()),
+        ))
     }
 
     async fn search_multi(&self, query: &str) -> Result<Vec<SearchHit>, SearchError> {
@@ -549,7 +564,10 @@ impl SearchService {
 }
 
 fn is_keyless(name: &str) -> bool {
-    matches!(name, "parallel" | "exa" | "keenable" | "youcom" | "firecrawl" | "ddg")
+    matches!(
+        name,
+        "parallel" | "exa" | "keenable" | "youcom" | "firecrawl" | "ddg"
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -629,7 +647,9 @@ impl SearchConfig {
         // Configured SearXNG / Degoog first
         if let Some(url) = &self.searxng_url {
             if !url.is_empty() {
-                out.push(Arc::new(KeyedProvider::new("searxng").with_url(url.clone())));
+                out.push(Arc::new(
+                    KeyedProvider::new("searxng").with_url(url.clone()),
+                ));
             }
         }
         if let Some(url) = &self.degoog_url {
@@ -638,13 +658,43 @@ impl SearchConfig {
             }
         }
         // Keyed APIs
-        if let Some(k) = &self.brave_key { if !k.is_empty() { out.push(Arc::new(KeyedProvider::new("brave").with_key(k.clone()))); } }
-        if let Some(k) = &self.tavily_key { if !k.is_empty() { out.push(Arc::new(KeyedProvider::new("tavily").with_key(k.clone()))); } }
-        if let Some(k) = &self.exa_key { if !k.is_empty() { out.push(Arc::new(KeyedProvider::new("exa").with_key(k.clone()))); } }
-        if let Some(k) = &self.serper_key { if !k.is_empty() { out.push(Arc::new(KeyedProvider::new("serper").with_key(k.clone()))); } }
-        if let Some(k) = &self.serpapi_key { if !k.is_empty() { out.push(Arc::new(KeyedProvider::new("serpapi").with_key(k.clone()))); } }
-        if let Some(k) = &self.jina_key { if !k.is_empty() { out.push(Arc::new(KeyedProvider::new("jina").with_key(k.clone()))); } }
-        if let Some(k) = &self.firecrawl_key { if !k.is_empty() { out.push(Arc::new(KeyedProvider::new("firecrawl").with_key(k.clone()))); } }
+        if let Some(k) = &self.brave_key {
+            if !k.is_empty() {
+                out.push(Arc::new(KeyedProvider::new("brave").with_key(k.clone())));
+            }
+        }
+        if let Some(k) = &self.tavily_key {
+            if !k.is_empty() {
+                out.push(Arc::new(KeyedProvider::new("tavily").with_key(k.clone())));
+            }
+        }
+        if let Some(k) = &self.exa_key {
+            if !k.is_empty() {
+                out.push(Arc::new(KeyedProvider::new("exa").with_key(k.clone())));
+            }
+        }
+        if let Some(k) = &self.serper_key {
+            if !k.is_empty() {
+                out.push(Arc::new(KeyedProvider::new("serper").with_key(k.clone())));
+            }
+        }
+        if let Some(k) = &self.serpapi_key {
+            if !k.is_empty() {
+                out.push(Arc::new(KeyedProvider::new("serpapi").with_key(k.clone())));
+            }
+        }
+        if let Some(k) = &self.jina_key {
+            if !k.is_empty() {
+                out.push(Arc::new(KeyedProvider::new("jina").with_key(k.clone())));
+            }
+        }
+        if let Some(k) = &self.firecrawl_key {
+            if !k.is_empty() {
+                out.push(Arc::new(
+                    KeyedProvider::new("firecrawl").with_key(k.clone()),
+                ));
+            }
+        }
 
         if self.provider_native {
             out.push(Arc::new(KeyedProvider::new("provider-native")));
@@ -660,7 +710,11 @@ impl SearchConfig {
             for name in ["parallel", "exa", "keenable", "youcom", "firecrawl", "ddg"] {
                 // avoid duplicate exa/firecrawl names — add with keyless- prefix if already present
                 let already = out.iter().any(|p| p.name() == name);
-                let n = if already { format!("{name}-keyless") } else { name.to_string() };
+                let n = if already {
+                    format!("{name}-keyless")
+                } else {
+                    name.to_string()
+                };
                 out.push(Arc::new(KeyedProvider::new(n)));
             }
         }
@@ -696,7 +750,10 @@ mod tests {
 
     #[tokio::test]
     async fn search_mock_returns_hits() {
-        let m = MockSearch::new("brave", vec![hit("https://a.com", "A"), hit("https://b.com", "B")]);
+        let m = MockSearch::new(
+            "brave",
+            vec![hit("https://a.com", "A"), hit("https://b.com", "B")],
+        );
         let hits = m.search("hello").await.unwrap();
         assert_eq!(hits.len(), 2);
         assert_eq!(m.call_count(), 1);
@@ -705,8 +762,10 @@ mod tests {
     #[tokio::test]
     async fn search_auto_uses_first_success() {
         let p1 = Arc::new(MockSearch::failing("parallel")) as Arc<dyn SearchProvider>;
-        let p2 = Arc::new(MockSearch::new("exa", vec![hit("https://ex.com", "Ex")])) as Arc<dyn SearchProvider>;
-        let p3 = Arc::new(MockSearch::new("ddg", vec![hit("https:://ddg.com", "DDG")])) as Arc<dyn SearchProvider>;
+        let p2 = Arc::new(MockSearch::new("exa", vec![hit("https://ex.com", "Ex")]))
+            as Arc<dyn SearchProvider>;
+        let p3 = Arc::new(MockSearch::new("ddg", vec![hit("https:://ddg.com", "DDG")]))
+            as Arc<dyn SearchProvider>;
         let mut svc = SearchService::new(SearchMode::Auto);
         svc.add_provider(p1);
         svc.add_provider(p2);
@@ -730,8 +789,14 @@ mod tests {
 
     #[tokio::test]
     async fn search_multi_fuses_with_rrf_and_dedupes() {
-        let p1 = Arc::new(MockSearch::new("brave", vec![hit("https://a.com", "A"), hit("https://b.com", "B")])) as Arc<dyn SearchProvider>;
-        let p2 = Arc::new(MockSearch::new("tavily", vec![hit("https://b.com", "B2"), hit("https://c.com", "C")])) as Arc<dyn SearchProvider>;
+        let p1 = Arc::new(MockSearch::new(
+            "brave",
+            vec![hit("https://a.com", "A"), hit("https://b.com", "B")],
+        )) as Arc<dyn SearchProvider>;
+        let p2 = Arc::new(MockSearch::new(
+            "tavily",
+            vec![hit("https://b.com", "B2"), hit("https://c.com", "C")],
+        )) as Arc<dyn SearchProvider>;
         let mut svc = SearchService::new(SearchMode::Multi);
         svc.add_provider(p1);
         svc.add_provider(p2);
@@ -747,9 +812,12 @@ mod tests {
 
     #[tokio::test]
     async fn search_random_picks_one_backend() {
-        let p1 = Arc::new(MockSearch::new("a", vec![hit("https://a.com", "A")])) as Arc<dyn SearchProvider>;
-        let p2 = Arc::new(MockSearch::new("b", vec![hit("https://b.com", "B")])) as Arc<dyn SearchProvider>;
-        let p3 = Arc::new(MockSearch::new("c", vec![hit("https://c.com", "C")])) as Arc<dyn SearchProvider>;
+        let p1 = Arc::new(MockSearch::new("a", vec![hit("https://a.com", "A")]))
+            as Arc<dyn SearchProvider>;
+        let p2 = Arc::new(MockSearch::new("b", vec![hit("https://b.com", "B")]))
+            as Arc<dyn SearchProvider>;
+        let p3 = Arc::new(MockSearch::new("c", vec![hit("https://c.com", "C")]))
+            as Arc<dyn SearchProvider>;
         let mut svc = SearchService::new(SearchMode::Random);
         svc.add_provider(p1);
         svc.add_provider(p2);
@@ -764,7 +832,8 @@ mod tests {
     async fn search_circuit_breaker_opens_and_skips() {
         let cb = CircuitBreaker::new(1, Duration::from_secs(600));
         let failing = Arc::new(MockSearch::failing("parallel")) as Arc<dyn SearchProvider>;
-        let ok = Arc::new(MockSearch::new("exa", vec![hit("https://ex.com", "Ex")])) as Arc<dyn SearchProvider>;
+        let ok = Arc::new(MockSearch::new("exa", vec![hit("https://ex.com", "Ex")]))
+            as Arc<dyn SearchProvider>;
         let mut svc = SearchService::new(SearchMode::Auto);
         svc.circuit = cb.clone();
         svc.add_provider(failing);
@@ -784,11 +853,13 @@ mod tests {
 
     #[tokio::test]
     async fn search_rate_limiter_blocks_after_limit() {
-        let m = Arc::new(MockSearch::new("brave", vec![hit("https://a.com", "A")])) as Arc<dyn SearchProvider>;
+        let m = Arc::new(MockSearch::new("brave", vec![hit("https://a.com", "A")]))
+            as Arc<dyn SearchProvider>;
         let mut svc = SearchService::new(SearchMode::Auto);
         svc.add_provider(m);
         // override limiter to 1 per minute
-        svc.rate_limiters.insert("brave".into(), RateLimiter::new(1));
+        svc.rate_limiters
+            .insert("brave".into(), RateLimiter::new(1));
         let ok = svc.search("q1").await.unwrap();
         assert_eq!(ok.len(), 1);
         // second call should be rate limited and thus fail (no other provider)
@@ -798,7 +869,8 @@ mod tests {
 
     #[tokio::test]
     async fn search_doctor_reports_health() {
-        let ok = Arc::new(MockSearch::new("brave", vec![hit("https://a.com", "A")])) as Arc<dyn SearchProvider>;
+        let ok = Arc::new(MockSearch::new("brave", vec![hit("https://a.com", "A")]))
+            as Arc<dyn SearchProvider>;
         let bad = Arc::new(MockSearch::failing("tavily")) as Arc<dyn SearchProvider>;
         let report = doctor_check(&[ok, bad]).await;
         assert_eq!(report.total(), 2);
@@ -807,7 +879,11 @@ mod tests {
         let ok_entry = report.checks.iter().find(|c| c.backend == "brave").unwrap();
         assert!(ok_entry.ok);
         assert!(ok_entry.error.is_none());
-        let bad_entry = report.checks.iter().find(|c| c.backend == "tavily").unwrap();
+        let bad_entry = report
+            .checks
+            .iter()
+            .find(|c| c.backend == "tavily")
+            .unwrap();
         assert!(!bad_entry.ok);
         assert!(bad_entry.error.is_some());
     }
@@ -815,7 +891,10 @@ mod tests {
     #[tokio::test]
     async fn search_keyless_chain_order() {
         let chain = SearchConfig::keyless_chain();
-        assert_eq!(chain, vec!["parallel", "exa", "keenable", "youcom", "firecrawl", "ddg"]);
+        assert_eq!(
+            chain,
+            vec!["parallel", "exa", "keenable", "youcom", "firecrawl", "ddg"]
+        );
     }
 
     #[tokio::test]
@@ -839,7 +918,10 @@ mod tests {
         let cfg = SearchConfig::default();
         let providers = cfg.build_providers();
         let names: Vec<String> = providers.iter().map(|p| p.name().to_string()).collect();
-        assert_eq!(names, vec!["parallel", "exa", "keenable", "youcom", "firecrawl", "ddg"]);
+        assert_eq!(
+            names,
+            vec!["parallel", "exa", "keenable", "youcom", "firecrawl", "ddg"]
+        );
     }
 
     #[tokio::test]

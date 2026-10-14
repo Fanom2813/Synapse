@@ -12,3 +12,11 @@ thiserror = { workspace = true }
 governor = { workspace = true }
 rand = "0.8"
 async-trait = { workspace = true }
+reqwest = { workspace = true }
+dom_smoothie = { workspace = true }
+htmd = { workspace = true }
+pdf-extract = { workspace = true }
+texting_robots = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+url = { workspace = true }

@@ -56,6 +56,9 @@ interprocess = "2"
 nono = { version = "=0.8.0" }
 dom_smoothie = { version = "=0.18.0" }
 htmd = { version = "=0.5.0" }
+sha2 = "0.10"
+hex = "0.4"
+url = "2"
 gray_matter = { version = "=0.3.0" }
 # UI shell (see docs/STACK.md). Pinned exactly; resolved once a crate opts in.
 gpui-kit = { version = "=0.7.3" }

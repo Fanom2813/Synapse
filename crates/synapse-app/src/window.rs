@@ -474,10 +474,64 @@ pub fn launch() {
 }
 
 /// Run-pill line for the title bar (mode + phase, or "Start a run").
+/// Paused runs prefix "Paused · "; narrow windows shrink to icon + avatars.
 pub fn run_pill_text(shell: &AppShell) -> String {
+    if shell.title.layout_for_width(window_width_hint()).compact_run_pill {
+        return compact_run_pill_text(shell);
+    }
+    shell.title.run_label()
+}
+
+/// Compact run pill for narrow windows: icon + avatar count.
+pub fn compact_run_pill_text(shell: &AppShell) -> String {
     match &shell.title.run {
         crate::titlebar::RunPill::Idle => "Start a run".to_string(),
-        crate::titlebar::RunPill::Running { mode, phase, .. } => format!("{mode} · {phase}"),
+        crate::titlebar::RunPill::Running { .. } => {
+            let (shown, overflow) = shell.title.run.visible_agents();
+            let extra = if overflow > 0 {
+                format!(" +{overflow}")
+            } else {
+                String::new()
+            };
+            if shell.title.run_paused {
+                format!("Paused · {} agents{extra}", shown.len())
+            } else {
+                format!("{} agents{extra}", shown.len())
+            }
+        }
+    }
+}
+
+/// Width hint for headless layout decisions (real view passes the window
+/// width instead). Narrow enough that tests exercise the overflow path.
+fn window_width_hint() -> f32 {
+    if cfg!(test) { 1280.0 } else { 1280.0 }
+}
+
+/// Run popover body: phase timeline + budget + available actions.
+pub fn run_popover_text(shell: &AppShell) -> String {
+    match &shell.title.run {
+        crate::titlebar::RunPill::Idle => "No active run [Start a run]".to_string(),
+        crate::titlebar::RunPill::Running { .. } => {
+            let actions = shell
+                .title
+                .run_actions()
+                .iter()
+                .map(|a| match a {
+                    crate::titlebar::RunAction::Pause => "Pause",
+                    crate::titlebar::RunAction::Resume => "Resume",
+                    crate::titlebar::RunAction::Stop => "Stop",
+                    crate::titlebar::RunAction::OpenActivity => "Activity",
+                })
+                .collect::<Vec<_>>()
+                .join(" · ");
+            let timeline = if shell.title.phase_history.is_empty() {
+                shell.title.run_label()
+            } else {
+                shell.title.phase_history.join(" → ")
+            };
+            format!("{timeline} | {} | [{actions}]", shell.title.budget.text())
+        }
     }
 }
 

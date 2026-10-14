@@ -178,6 +178,23 @@ impl AppShell {
 
     pub fn set_run(&mut self, run: RunPill) {
         self.title.run = run;
+        self.title.run_paused = false;
+    }
+
+    /// Run popover controls (UI.md §1b-3): pause / resume / stop.
+    pub fn pause_run(&mut self) -> bool {
+        use crate::titlebar::RunAction;
+        self.title.apply_run_action(RunAction::Pause)
+    }
+
+    pub fn resume_run(&mut self) -> bool {
+        use crate::titlebar::RunAction;
+        self.title.apply_run_action(RunAction::Resume)
+    }
+
+    pub fn stop_run(&mut self) -> bool {
+        use crate::titlebar::RunAction;
+        self.title.apply_run_action(RunAction::Stop)
     }
 
     /// Navigate to the Settings → Providers screen (sidebar / palette).

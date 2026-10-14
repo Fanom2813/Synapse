@@ -71,6 +71,66 @@ pub fn window_title(shell: &AppShell) -> String {
     }
 }
 
+/// First-launch routing (UI.md §9): a fresh install opens the seven-step
+/// onboarding wizard; returning users (completed flow or existing projects)
+/// bypass it straight into the normal workspace.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartupRoute {
+    Onboarding,
+    Workspace,
+}
+
+/// Decide which window to open first. Toolkit-free so tests run headless.
+pub fn resolve_startup(store: &synapse_store::Store) -> StartupRoute {
+    if crate::onboarding::FirstLaunch::should_show(store) {
+        StartupRoute::Onboarding
+    } else {
+        StartupRoute::Workspace
+    }
+}
+
+/// Background backend probe for the Brains step (UI.md §9.4): installed CLI
+/// agents (with login state) plus local Ollama / LM Studio models.
+///
+/// Runs on the worker thread started by [`crate::onboarding::FirstLaunch::start_background_detection`]
+/// — never on the UI thread — so it may block on the network. Unreachable
+/// servers are skipped, never errors; an empty snapshot means "nothing found".
+pub fn onboarding_detection_probe() -> crate::onboarding::DetectionSnapshot {
+    use crate::onboarding::{CliEntry, DetectionSnapshot, LocalModelEntry};
+    let mut snap = DetectionSnapshot::default();
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(_) => return snap,
+    };
+    rt.block_on(async {
+        for agent in synapse_acp::detect_installed().await {
+            snap.cli_agents.push(CliEntry {
+                id: agent.id,
+                label: agent.label,
+                logged_in: agent.login == synapse_acp::LoginState::LoggedIn,
+            });
+        }
+        if let Ok(client) = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(4))
+            .build()
+        {
+            for server in synapse_llm::local::detect_local_servers(&client).await {
+                for model in server.models {
+                    snap.local_models.push(LocalModelEntry {
+                        server: server.server.label().to_string(),
+                        model: model.id,
+                    });
+                }
+            }
+        }
+        snap.done = true;
+    });
+    snap
+}
+
 /// Open the shell with persisted state from the data dir. Never fails:
 /// missing or corrupt files fall back to defaults so the window always opens.
 pub fn open_persisted_shell() -> AppShell {
@@ -176,6 +236,7 @@ pub fn ensure_chat_conversation(store: &synapse_store::Store) -> Option<String> 
 #[cfg(not(test))]
 pub fn launch() {
     use crate::chat_view::ChatView;
+    use gpui_kit::component::input::{InputEvent, InputState};
     use crate::lifecycle::{
         apply_tray_command, bind_single_instance, handle_second_launch, notify_existing_instance,
         read_instance_message, tray_menu_items, OpenEffect, TrayCommand, WindowLifecycle,
@@ -296,6 +357,614 @@ pub fn launch() {
 
     impl Global for TrayHandle {}
 
+    fn open_store() -> Option<synapse_store::Store> {
+        synapse_store::Store::open(crate::app_dirs::db_path()).ok()
+    }
+
+    /// First window (UI.md §9): the seven-step onboarding wizard for fresh
+    /// installs, the normal workspace for returning users.
+    fn open_startup_window(cx: &mut App) -> AnyWindowHandle {
+        let route = open_store()
+            .map(|s| resolve_startup(&s))
+            .unwrap_or(StartupRoute::Workspace);
+        match route {
+            StartupRoute::Workspace => {
+                let shell = open_persisted_shell();
+                open_main_window(cx, shell)
+            }
+            StartupRoute::Onboarding => {
+                let (handle, _) = open_window(WindowOptions::default(), cx, |window, cx| {
+                    cx.new(|cx| OnboardingView::new(window, cx))
+                })
+                .expect("failed to open Synapse onboarding");
+                handle
+            }
+        }
+    }
+
+    /// First-launch wizard (UI.md §9): one step at a time with a progress
+    /// row, real inputs for every step, Enter = continue / Esc = back, skip
+    /// on every step, progress persisted after each step (resume after
+    /// restart). Backend detection runs on a worker thread and is polled
+    /// here without ever blocking the UI. On Start, the first project is
+    /// created, the lead introduction posted, and this same window morphs
+    /// into the normal workspace.
+    struct OnboardingView {
+        flow: crate::onboarding::FirstLaunch,
+        name_input: Entity<InputState>,
+        key_input: Entity<InputState>,
+        goal_input: Entity<InputState>,
+        searxng_input: Entity<InputState>,
+        provider: String,
+        status: String,
+        main: Option<(AppShell, Entity<ChatView<synapse_llm::GenaiBackend>>)>,
+        _subs: Vec<Subscription>,
+    }
+
+    impl OnboardingView {
+        fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+            use crate::onboarding::FirstLaunch;
+            let flow = match open_store() {
+                Some(s) => FirstLaunch::open(&s),
+                None => {
+                    let mem = synapse_store::Store::open_in_memory()
+                        .expect("in-memory store");
+                    FirstLaunch::open(&mem)
+                }
+            };
+            let snap = flow.flow().snapshot().clone();
+            let name_input = cx.new(|cx| {
+                InputState::new(window, cx)
+                    .placeholder("Lead name")
+                    .default_value(snap.lead_name.clone())
+            });
+            let key_input =
+                cx.new(|cx| InputState::new(window, cx).placeholder("API key").masked(true));
+            let goal_input = cx.new(|cx| {
+                InputState::new(window, cx)
+                    .placeholder("What should the team figure out?")
+                    .default_value(snap.project_goal.clone())
+            });
+            let searxng_input = cx.new(|cx| {
+                InputState::new(window, cx)
+                    .placeholder("SearXNG URL (optional)")
+                    .default_value(snap.searxng_url.clone())
+            });
+            let _subs = vec![
+                cx.subscribe_in(&name_input, window, Self::on_name_event),
+                cx.subscribe_in(&goal_input, window, Self::on_goal_event),
+                cx.subscribe_in(&searxng_input, window, Self::on_searxng_event),
+            ];
+            // Backend detection runs off the UI thread; poll it here without
+            // ever waiting on the network (UI.md §9: nothing blocks).
+            flow.start_background_detection(onboarding_detection_probe);
+            cx.spawn(async move |this, cx| {
+                for _ in 0..240 {
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_millis(500))
+                        .await;
+                    let alive = this.update(cx, |this, cx| {
+                        this.poll_detection();
+                        cx.notify();
+                    });
+                    if alive.is_err() {
+                        break;
+                    }
+                }
+            })
+            .detach();
+            Self {
+                flow,
+                name_input,
+                key_input,
+                goal_input,
+                searxng_input,
+                provider: String::from("anthropic"),
+                status: String::new(),
+                main: None,
+                _subs,
+            }
+        }
+
+        fn on_name_event(
+            &mut self,
+            _: &Entity<InputState>,
+            event: &InputEvent,
+            _: &mut Window,
+            cx: &mut Context<Self>,
+        ) {
+            if matches!(event, InputEvent::Change) {
+                let name = self.name_input.read(cx).value().to_string();
+                if let Some(store) = open_store() {
+                    self.flow.set_lead_name(&store, &name);
+                }
+                cx.notify();
+            }
+        }
+
+        fn on_goal_event(
+            &mut self,
+            _: &Entity<InputState>,
+            event: &InputEvent,
+            _: &mut Window,
+            cx: &mut Context<Self>,
+        ) {
+            if matches!(event, InputEvent::Change) {
+                let goal = self.goal_input.read(cx).value().to_string();
+                if let Some(store) = open_store() {
+                    self.flow.set_goal(&store, &goal);
+                }
+                cx.notify();
+            }
+        }
+
+        fn on_searxng_event(
+            &mut self,
+            _: &Entity<InputState>,
+            event: &InputEvent,
+            _: &mut Window,
+            cx: &mut Context<Self>,
+        ) {
+            if matches!(event, InputEvent::Change) {
+                let url = self.searxng_input.read(cx).value().to_string();
+                if let Some(store) = open_store() {
+                    let browser = self.flow.flow().snapshot().browser_connected;
+                    self.flow.set_research(&store, browser, &url);
+                }
+                cx.notify();
+            }
+        }
+
+        fn poll_detection(&mut self) {
+            if let Some(store) = open_store() {
+                self.flow.poll_detection(&store);
+            }
+        }
+
+        fn set_name_chip(&mut self, window: &mut Window, cx: &mut Context<Self>, name: &str) {
+            if let Some(store) = open_store() {
+                self.flow.set_lead_name(&store, name);
+                self.name_input.update(cx, |input, cx| {
+                    input.set_value(name, window, cx);
+                });
+            }
+            cx.notify();
+        }
+
+        fn set_goal_chip(&mut self, window: &mut Window, cx: &mut Context<Self>, goal: &str) {
+            if let Some(store) = open_store() {
+                self.flow.set_goal(&store, goal);
+                self.goal_input.update(cx, |input, cx| {
+                    input.set_value(goal, window, cx);
+                });
+            }
+            cx.notify();
+        }
+
+        fn do_back(&mut self, cx: &mut Context<Self>) {
+            if let Some(store) = open_store() {
+                self.flow.back(&store);
+            }
+            self.status.clear();
+            cx.notify();
+        }
+
+        fn do_skip(&mut self, cx: &mut Context<Self>) {
+            if let Some(store) = open_store() {
+                self.flow.skip(&store);
+            }
+            self.status.clear();
+            cx.notify();
+        }
+
+        /// Enter = continue (or Start on the last step). Persists every move
+        /// so an unfinished flow resumes after restart.
+        fn do_continue(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+            use crate::onboarding::Step;
+            if self.flow.flow().step() == Step::FirstProject {
+                if let Some(store) = open_store() {
+                    match self.flow.complete(&store) {
+                        Ok(done) => {
+                            let project_name = store
+                                .get_project(&done.project_id)
+                                .map(|p| p.name)
+                                .unwrap_or_else(|_| "First project".to_string());
+                            let mut shell = open_persisted_shell();
+                            self.flow.enter_workspace(
+                                &mut shell,
+                                &done.project_id,
+                                &project_name,
+                                true,
+                            );
+                            let (backend, model, persist) = chat_config();
+                            let conversation_id = done.conversation_id.clone();
+                            let chat = cx.new(|cx| {
+                                let mut view = ChatView::new(window, cx, backend, model)
+                                    .with_persist(persist);
+                                if let Some(store) = view.persist_store() {
+                                    view.open_conversation(&store, &conversation_id);
+                                }
+                                view
+                            });
+                            self.status.clear();
+                            self.main = Some((shell, chat));
+                        }
+                        Err(e) => {
+                            self.status = e;
+                        }
+                    }
+                }
+            } else if self.flow.can_continue() {
+                if let Some(store) = open_store() {
+                    self.flow.advance(&store);
+                }
+                self.status.clear();
+            } else {
+                self.status = self
+                    .flow
+                    .flow()
+                    .blocked_hint()
+                    .unwrap_or("Not yet — see above.")
+                    .to_string();
+            }
+            cx.notify();
+        }
+
+        /// API-key path: the key itself goes to the OS keychain (never the
+        /// DB); only the live-test flag persists with the flow. Assumed: a
+        /// non-empty key that the keychain accepts counts as tested here;
+        /// the full live model-list check lives in Settings → Providers.
+        fn do_test_key(&mut self, cx: &mut Context<Self>) {
+            use synapse_llm::keys::SecretStore as _;
+            let key = self.key_input.read(cx).value().to_string();
+            if key.trim().is_empty() {
+                self.status = "Paste a key first.".to_string();
+            } else if synapse_llm::keys::KeychainSecretStore
+                .set("provider", &self.provider, key.trim())
+                .is_err()
+            {
+                self.status = "Could not save that key (keychain unavailable).".to_string();
+            } else {
+                if let Some(store) = open_store() {
+                    self.flow.set_api_result(&store, &self.provider.clone(), true);
+                }
+                self.status = format!("{} key saved ✓", self.provider);
+            }
+            cx.notify();
+        }
+    }
+
+    impl Render for OnboardingView {
+        fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            use crate::onboarding::{Step, EXAMPLE_GOALS};
+            use gpui_kit::component::button::{Button, ButtonVariants};
+            use gpui_kit::component::input::Input;
+            // Completed: this window is now the normal workspace.
+            if let Some((shell, chat)) = &self.main {
+                let screen = ShellScreen::describe(shell);
+                return div()
+                    .flex()
+                    .flex_col()
+                    .size_full()
+                    .child(div().p_2().child(screen.window_title.clone()))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .flex_1()
+                            .child(div().p_2().child(screen.sidebar_text.clone()))
+                            .child(div().flex_1().p_2().child(chat.clone())),
+                    );
+            }
+            let step = self.flow.flow().step();
+            let (n, total) = self.flow.flow().progress();
+            let snap = self.flow.flow().snapshot().clone();
+            let can_continue = self.flow.can_continue();
+            let continue_label = if step == Step::FirstProject {
+                "Start"
+            } else {
+                "Continue"
+            };
+            let mut col = div()
+                .flex()
+                .flex_col()
+                .size_full()
+                .p_4()
+                .gap_3()
+                .on_key_down(cx.listener(
+                    |this: &mut Self, event: &KeyDownEvent, window, cx| {
+                        let key: &str = &event.keystroke.key;
+                        match key {
+                            "enter" => this.do_continue(window, cx),
+                            "escape" => this.do_back(cx),
+                            _ => {}
+                        }
+                    },
+                ))
+                .child(div().child(format!("Step {n}/{total}")))
+                .child(div().child(step.title().to_string()));
+            match step {
+                Step::Hello => {
+                    col = col
+                        .child(div().child("Your research team lives here. One question at a time."))
+                        .child(
+                            Button::new("ob-import")
+                                .label("I've used Synapse before → skip")
+                                .secondary()
+                                .on_click(cx.listener(|this, _, _, cx| this.do_skip(cx))),
+                        );
+                }
+                Step::LeadName => {
+                    col = col
+                        .child(Input::new(&self.name_input))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .gap_2()
+                                .child(
+                                    Button::new("ob-name-dottie")
+                                        .label("Dottie")
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.set_name_chip(window, cx, "Dottie");
+                                        })),
+                                )
+                                .child(
+                                    Button::new("ob-name-mira")
+                                        .label("Mira")
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.set_name_chip(window, cx, "Mira");
+                                        })),
+                                )
+                                .child(
+                                    Button::new("ob-name-zara")
+                                        .label("Zara")
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.set_name_chip(window, cx, "Zara");
+                                        })),
+                                ),
+                        );
+                }
+                Step::LeadLook => {
+                    let look = format!(
+                        "{} · {} · {} {}",
+                        snap.shape, snap.palette, snap.eyes, snap.accessory
+                    );
+                    col = col
+                        .child(div().child(look))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .gap_2()
+                                .child(Button::new("ob-shape-bean").label("bean").on_click(
+                                    cx.listener(|this, _, _, cx| {
+                                        if let Some(store) = open_store() {
+                                            let s = this.flow.flow().snapshot().clone();
+                                            this.flow.set_look(
+                                                &store,
+                                                "bean",
+                                                &s.palette,
+                                                &s.eyes,
+                                                &s.accessory,
+                                            );
+                                        }
+                                        cx.notify();
+                                    }),
+                                ))
+                                .child(Button::new("ob-shape-round").label("round").on_click(
+                                    cx.listener(|this, _, _, cx| {
+                                        if let Some(store) = open_store() {
+                                            let s = this.flow.flow().snapshot().clone();
+                                            this.flow.set_look(
+                                                &store,
+                                                "round",
+                                                &s.palette,
+                                                &s.eyes,
+                                                &s.accessory,
+                                            );
+                                        }
+                                        cx.notify();
+                                    }),
+                                ))
+                                .child(
+                                    Button::new("ob-surprise")
+                                        .label("Surprise me")
+                                        .secondary()
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            if let Some(store) = open_store() {
+                                                // Deterministic shuffle from the name so it is
+                                                // stable across restarts, bounced by the view.
+                                                let n: usize = this
+                                                    .flow
+                                                    .flow()
+                                                    .snapshot()
+                                                    .lead_name
+                                                    .bytes()
+                                                    .map(|b| b as usize)
+                                                    .sum::<usize>()
+                                                    + this.flow.flow().snapshot().skipped.len();
+                                                let shapes =
+                                                    ["bean", "round", "pear", "cloud", "drop"];
+                                                let palettes =
+                                                    ["green", "amber", "violet", "blue"];
+                                                this.flow.set_look(
+                                                    &store,
+                                                    shapes[n % shapes.len()],
+                                                    palettes[(n / shapes.len()) % palettes.len()],
+                                                    "diamond",
+                                                    "",
+                                                );
+                                            }
+                                            cx.notify();
+                                        })),
+                                ),
+                        );
+                }
+                Step::Brains => {
+                    let found = format!(
+                        "Found: {} CLIs ({} logged in), {} local models{}",
+                        snap.detection.cli_agents.len(),
+                        snap.detection
+                            .cli_agents
+                            .iter()
+                            .filter(|c| c.logged_in)
+                            .count(),
+                        snap.detection.local_models.len(),
+                        if snap.detection.done {
+                            ""
+                        } else {
+                            " — still looking…"
+                        }
+                    );
+                    col = col
+                        .child(div().child(found))
+                        .child(Input::new(&self.key_input))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .gap_2()
+                                .child(
+                                    Button::new("ob-key-test")
+                                        .label("Save key & test")
+                                        .on_click(cx.listener(|this, _, _, cx| this.do_test_key(cx))),
+                                )
+                                .child(
+                                    Button::new("ob-backend-keyless")
+                                        .label("Try free, no keys")
+                                        .secondary()
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            if let Some(store) = open_store() {
+                                                this.flow.set_brains_backend(&store, "keyless");
+                                            }
+                                            cx.notify();
+                                        })),
+                                ),
+                        );
+                    if !can_continue {
+                        col = col.child(div().child(
+                            self.flow
+                                .flow()
+                                .blocked_hint()
+                                .unwrap_or("Still looking…")
+                                .to_string(),
+                        ));
+                    }
+                }
+                Step::Research => {
+                    let browser = if snap.browser_connected {
+                        "Browser connected ✓"
+                    } else {
+                        "Browser not connected (keyless search already works)"
+                    };
+                    col = col
+                        .child(div().child(browser.to_string()))
+                        .child(Input::new(&self.searxng_input))
+                        .child(
+                            Button::new("ob-browser-toggle")
+                                .label(if snap.browser_connected {
+                                    "Disconnect browser"
+                                } else {
+                                    "Connect browser"
+                                })
+                                .secondary()
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    if let Some(store) = open_store() {
+                                        let s = this.flow.flow().snapshot().clone();
+                                        this.flow.set_research(
+                                            &store,
+                                            !s.browser_connected,
+                                            &s.searxng_url,
+                                        );
+                                    }
+                                    cx.notify();
+                                })),
+                        );
+                }
+                Step::Team => {
+                    let mut row = div().flex().flex_row().gap_2();
+                    for t in synapse_core::builtin_templates() {
+                        let id = t.id.clone();
+                        let label = t.name.clone();
+                        let btn_id = format!("ob-template-{}", t.id);
+                        row = row.child(
+                            Button::new(btn_id)
+                                .label(label)
+                                .secondary()
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    if let Some(store) = open_store() {
+                                        this.flow.set_template(&store, &id);
+                                    }
+                                    cx.notify();
+                                })),
+                        );
+                    }
+                    col = col
+                        .child(div().child(format!("Team: {}", self.flow.flow().template_name())))
+                        .child(row);
+                }
+                Step::FirstProject => {
+                    let mut chips = div().flex().flex_row().gap_2();
+                    for (i, goal) in EXAMPLE_GOALS.iter().enumerate() {
+                        let g = goal.to_string();
+                        chips = chips.child(
+                            Button::new(format!("ob-goal-{i}"))
+                                .label(g.clone())
+                                .secondary()
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.set_goal_chip(window, cx, &g.clone());
+                                })),
+                        );
+                    }
+                    col = col.child(Input::new(&self.goal_input)).child(chips).child(
+                        div().child("Keep Synapse in the menu bar: toggle after the first run starts."),
+                    );
+                }
+            }
+            if !self.status.is_empty() {
+                col = col.child(div().child(self.status.clone()));
+            }
+            col.child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .gap_2()
+                    .child(
+                        Button::new("ob-back")
+                            .label("Back (Esc)")
+                            .secondary()
+                            .on_click(cx.listener(|this, _, _, cx| this.do_back(cx))),
+                    )
+                    .child(
+                        Button::new("ob-skip")
+                            .label("Skip")
+                            .secondary()
+                            .on_click(cx.listener(|this, _, _, cx| this.do_skip(cx))),
+                    )
+                    .child(if can_continue || step == Step::FirstProject {
+                        Button::new("ob-continue")
+                            .label(continue_label)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.do_continue(window, cx);
+                            }))
+                    } else {
+                        Button::new("ob-continue-disabled").label(continue_label).on_click(
+                            cx.listener(|this, _, _, cx| {
+                                this.status = this
+                                    .flow
+                                    .flow()
+                                    .blocked_hint()
+                                    .unwrap_or("Not yet — see above.")
+                                    .to_string();
+                                cx.notify();
+                            }),
+                        )
+                    }),
+            )
+        }
+    }
+
     fn open_main_window(cx: &mut App, shell: AppShell) -> AnyWindowHandle {
         let (handle, _) = open_window(WindowOptions::default(), cx, |window, cx| {
             let (backend, model, persist) = chat_config();
@@ -328,8 +997,7 @@ pub fn launch() {
             return OpenEffect::Focus;
         }
         // No live native window (closed, or never opened): rebuild from store.
-        let shell = open_persisted_shell();
-        let handle = open_main_window(cx, shell);
+        let handle = open_startup_window(cx);
         cx.global_mut::<LifecycleHost>().window = Some(handle);
         cx.activate(true);
         effect
@@ -497,8 +1165,7 @@ pub fn launch() {
                 Ok(tray) => cx.set_global(TrayHandle(tray)),
                 Err(e) => eprintln!("tray unavailable ({e}); Open/Quit remain in the dock menu"),
             }
-            let shell = open_persisted_shell();
-            let handle = open_main_window(cx, shell);
+            let handle = open_startup_window(cx);
             cx.global_mut::<LifecycleHost>().window = Some(handle);
             // Close hides: Explicit quit mode keeps the app alive; record the
             // hidden state and destroy it after the threshold (frees GPU).
@@ -625,6 +1292,44 @@ mod tests {
     use super::*;
     use crate::shell::ShellProject;
     use crate::titlebar::RunPill;
+
+    #[test]
+    fn startup_routes_fresh_users_to_onboarding() {
+        let store = synapse_store::Store::open_in_memory().expect("store");
+        assert_eq!(resolve_startup(&store), StartupRoute::Onboarding);
+    }
+
+    #[test]
+    fn startup_bypasses_returning_users_into_workspace() {
+        let store = synapse_store::Store::open_in_memory().expect("store");
+        store
+            .create_project(&synapse_store::NewProject {
+                id: "p1".into(),
+                name: "Old work".into(),
+                goal: "goal".into(),
+                folder: String::new(),
+                lead_agent_id: String::new(),
+                template: "custom".into(),
+            })
+            .unwrap();
+        assert_eq!(resolve_startup(&store), StartupRoute::Workspace);
+    }
+
+    #[test]
+    fn onboarding_detection_probe_returns_without_network_wait() {
+        // The probe may touch localhost/the network; it must still return
+        // promptly and never fail — the wizard never waits on it.
+        let started = std::time::Instant::now();
+        let snap = onboarding_detection_probe();
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(60),
+            "probe blocked the caller"
+        );
+        // Shape check only: entries, if any, are well-formed.
+        for cli in &snap.cli_agents {
+            assert!(!cli.id.is_empty());
+        }
+    }
 
     #[test]
     fn window_chat_conversation_is_reused_across_opens() {

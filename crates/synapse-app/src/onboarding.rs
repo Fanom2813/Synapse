@@ -434,6 +434,307 @@ impl Default for OnboardingFlow {
 /// How long the Hello delight step shows before Continue enables (3 s).
 pub const HELLO_DELAY: Duration = Duration::from_secs(3);
 
+// ---------------------------------------------------------------------------
+// First-launch wiring (UI.md §9 → main window)
+//
+// [`FirstLaunch`] is the toolkit-free first-launch window state: it owns an
+// [`OnboardingFlow`], persists after every step so an unfinished flow
+// resumes after restart, and on completion creates/opens the first project,
+// posts the lead introduction, and hands the window to the normal workspace.
+// The GPUI view renders from [`FirstLaunch::screen_text`] and forwards
+// inputs to the `set_*` / `advance` / `back` / `skip` / `press_key` methods.
+// ---------------------------------------------------------------------------
+
+/// Project + greeting produced by [`FirstLaunch::complete`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompletedOnboarding {
+    pub project_id: String,
+    pub conversation_id: String,
+    pub introduction: String,
+}
+
+/// First-launch window: onboarding flow + persistence + workspace handoff.
+pub struct FirstLaunch {
+    flow: OnboardingFlow,
+}
+
+impl FirstLaunch {
+    /// Open the first-launch state: resumes saved progress when present.
+    /// Never fails: a missing/corrupt row starts a fresh flow.
+    pub fn open(store: &synapse_store::Store) -> Self {
+        let flow = OnboardingFlow::load(store).unwrap_or_default();
+        Self { flow }
+    }
+
+    /// Whether the first-launch wizard should show for this store.
+    /// Returning users (completed flow, or existing projects with a fresh
+    /// flow) bypass onboarding straight into the normal workspace.
+    pub fn should_show(store: &synapse_store::Store) -> bool {
+        let flow = OnboardingFlow::load(store).unwrap_or_default();
+        Self::should_show_flow(store, &flow)
+    }
+
+    fn should_show_flow(store: &synapse_store::Store, flow: &OnboardingFlow) -> bool {
+        if flow.is_completed() {
+            return false;
+        }
+        let s = flow.snapshot();
+        let fresh = s.step_index == 0
+            && s.skipped.is_empty()
+            && s.project_goal.is_empty()
+            && (s.lead_name.is_empty() || s.lead_name == "Dottie");
+        if fresh {
+            // Returning users (existing projects, never started onboarding)
+            // bypass straight into the normal workspace.
+            if let Ok(projects) = store.list_projects(false) {
+                if !projects.is_empty() {
+                    return false;
+                }
+            }
+            return true;
+        }
+        // Resumable: an unfinished flow always shows, even with projects.
+        true
+    }
+
+    pub fn should_show_self(&self, store: &synapse_store::Store) -> bool {
+        Self::should_show_flow(store, &self.flow)
+    }
+
+    pub fn flow(&self) -> &OnboardingFlow {
+        &self.flow
+    }
+
+    pub fn flow_mut(&mut self) -> &mut OnboardingFlow {
+        &mut self.flow
+    }
+
+    /// Headless description of the current wizard step for the GPUI view.
+    /// Format: `"Step i/7 · Title · hint"` plus field values so the view
+    /// can render each of the seven steps without extra state.
+    pub fn screen_text(&self) -> String {
+        let (n, total) = self.flow.progress();
+        let step = self.flow.step();
+        let s = self.flow.snapshot();
+        let fields = match step {
+            Step::Hello => "Let's start".to_string(),
+            Step::LeadName => format!("lead_name={}", s.lead_name),
+            Step::LeadLook => format!(
+                "shape={} palette={} eyes={} accessory={}",
+                s.shape, s.palette, s.eyes, s.accessory
+            ),
+            Step::Brains => format!(
+                "backend={} api_provider={} api_key_ok={} cli={} local={}",
+                s.brains_backend,
+                s.api_provider,
+                s.api_key_ok,
+                s.detection.cli_agents.len(),
+                s.detection.local_models.len()
+            ),
+            Step::Research => {
+                format!("browser={} searxng={}", s.browser_connected, s.searxng_url)
+            }
+            Step::Team => format!("template={} ({})", s.template_id, self.flow.template_name()),
+            Step::FirstProject => format!("goal={}", s.project_goal),
+        };
+        let cont = if self.flow.can_continue() {
+            "Continue"
+        } else {
+            self.flow.blocked_hint().unwrap_or("Blocked")
+        };
+        format!("Step {n}/{total} · {} · {fields} [{cont}] [Skip] [Back]", step.title())
+    }
+
+    /// Start background backend detection without blocking the UI thread.
+    /// `probe` runs on a worker thread; the view polls [`Self::poll_detection`].
+    /// Returns immediately even when the probe blocks on the network.
+    pub fn start_background_detection<F>(&self, probe: F)
+    where
+        F: FnOnce() -> DetectionSnapshot + Send + 'static,
+    {
+        self.flow.start_background_detection(probe);
+    }
+
+    /// Non-blocking drain of background results; persists when new data
+    /// arrived so resume sees the latest backends. Never waits on network.
+    pub fn poll_detection(&mut self, store: &synapse_store::Store) -> bool {
+        let updated = self.flow.poll_detection();
+        if updated {
+            let _ = self.flow.save(store);
+        }
+        updated
+    }
+
+    fn persist(&self, store: &synapse_store::Store) {
+        let _ = self.flow.save(store);
+    }
+
+    // -- per-step inputs (each persists so restart resumes mid-flow) --
+
+    pub fn set_lead_name(&mut self, store: &synapse_store::Store, name: &str) {
+        self.flow.set_lead_name(name);
+        self.persist(store);
+    }
+
+    pub fn set_look(
+        &mut self,
+        store: &synapse_store::Store,
+        shape: &str,
+        palette: &str,
+        eyes: &str,
+        accessory: &str,
+    ) {
+        self.flow.set_look(shape, palette, eyes, accessory);
+        self.persist(store);
+    }
+
+    pub fn set_brains_backend(&mut self, store: &synapse_store::Store, backend: &str) {
+        self.flow.set_brains_backend(backend);
+        self.persist(store);
+    }
+
+    pub fn set_api_result(
+        &mut self,
+        store: &synapse_store::Store,
+        provider: &str,
+        ok: bool,
+    ) {
+        self.flow.set_api_result(provider, ok);
+        self.persist(store);
+    }
+
+    pub fn set_research(&mut self, store: &synapse_store::Store, browser: bool, url: &str) {
+        self.flow.set_research(browser, url);
+        self.persist(store);
+    }
+
+    pub fn set_template(&mut self, store: &synapse_store::Store, template_id: &str) -> bool {
+        let ok = self.flow.set_template(template_id);
+        self.persist(store);
+        ok
+    }
+
+    pub fn set_goal(&mut self, store: &synapse_store::Store, goal: &str) {
+        self.flow.set_goal(goal);
+        self.persist(store);
+    }
+
+    pub fn advance(&mut self, store: &synapse_store::Store) {
+        self.flow.next();
+        self.persist(store);
+    }
+
+    pub fn back(&mut self, store: &synapse_store::Store) {
+        self.flow.back();
+        self.persist(store);
+    }
+
+    pub fn skip(&mut self, store: &synapse_store::Store) {
+        self.flow.skip();
+        self.persist(store);
+    }
+
+    /// Enter = continue (when allowed), Esc = back. Persists after handling.
+    pub fn press_key(&mut self, store: &synapse_store::Store, code: &str) {
+        self.flow.press_key(code);
+        self.persist(store);
+    }
+
+    pub fn can_continue(&self) -> bool {
+        self.flow.can_continue()
+    }
+
+    pub fn is_completed(&self) -> bool {
+        self.flow.is_completed()
+    }
+
+    /// Finish the wizard: validates the goal, marks complete, creates/opens
+    /// the first project, posts the lead introduction into its room, and
+    /// persists so returning users bypass onboarding.
+    pub fn complete(
+        &mut self,
+        store: &synapse_store::Store,
+    ) -> Result<CompletedOnboarding, String> {
+        let intro = self.flow.finish().map_err(|e| e.to_string())?;
+        let s = self.flow.snapshot().clone();
+        let project_id = synapse_store::new_id("project");
+        let name = short_project_name(&s.project_goal);
+        let project = store
+            .create_project(&synapse_store::NewProject {
+                id: project_id.clone(),
+                name,
+                goal: s.project_goal.clone(),
+                folder: String::new(),
+                lead_agent_id: s.lead_name.clone(),
+                template: s.template_id.clone(),
+            })
+            .map_err(|e| e.to_string())?;
+        let conversation_id = synapse_store::new_id("conversation");
+        store
+            .create_conversation(&conversation_id, &project.id, "room", &project.name)
+            .map_err(|e| e.to_string())?;
+        store
+            .insert_message(&synapse_store::NewMessage {
+                id: synapse_store::new_id("message"),
+                conversation_id: conversation_id.clone(),
+                run_id: String::new(),
+                from_id: if s.lead_name.trim().is_empty() {
+                    "Dottie".into()
+                } else {
+                    s.lead_name.clone()
+                },
+                to_json: "[]".into(),
+                kind: "say".into(),
+                reply_to: String::new(),
+                thread_id: String::new(),
+                body: intro.clone(),
+                meta: "{\"onboarding\":true}".into(),
+            })
+            .map_err(|e| e.to_string())?;
+        self.persist(store);
+        Ok(CompletedOnboarding {
+            project_id: project.id,
+            conversation_id,
+            introduction: intro,
+        })
+    }
+
+    /// Transition a toolkit-free [`crate::shell::AppShell`] into the normal
+    /// workspace with the completed project open.
+    pub fn enter_workspace(
+        &self,
+        shell: &mut crate::shell::AppShell,
+        project_id: &str,
+        project_name: &str,
+        has_messages: bool,
+    ) {
+        if !shell.projects.iter().any(|p| p.id == project_id) {
+            shell.projects.push(crate::shell::ShellProject {
+                id: project_id.to_string(),
+                name: project_name.to_string(),
+                has_messages,
+            });
+        } else if let Some(p) = shell.projects.iter_mut().find(|p| p.id == project_id) {
+            p.has_messages = has_messages;
+        }
+        shell.open_room();
+        shell.open_project(project_id);
+    }
+}
+
+fn short_project_name(goal: &str) -> String {
+    let g = goal.trim();
+    if g.is_empty() {
+        return "First project".to_string();
+    }
+    let first: String = g.split(['.', '!', '?', '\n']).next().unwrap_or(g).trim().to_string();
+    if first.chars().count() <= 60 {
+        first
+    } else {
+        first.chars().take(57).collect::<String>() + "..."
+    }
+}
+
 #[cfg(test)]
 mod onboarding_tests {
     use super::*;
@@ -636,5 +937,100 @@ mod onboarding_tests {
         assert!(raw.contains("api_key_ok"));
         // Simplest-option hint exists for the nothing-found case.
         assert!(!DetectionSnapshot::default().simplest_option().is_empty());
+    }
+
+    fn drive_to_goal(store: &synapse_store::Store) -> FirstLaunch {
+        let mut w = FirstLaunch::open(&store);
+        w.set_lead_name(store, "Dottie");
+        w.set_look(store, "bean", "green", "diamond", "");
+        w.set_brains_backend(store, "claude");
+        w.set_api_result(store, "anthropic", true);
+        assert!(w.set_template(store, "research-squad"));
+        w.set_research(store, false, "");
+        w.set_goal(store, EXAMPLE_GOALS[0]);
+        w
+    }
+
+    #[test]
+    fn onboarding_first_launch_renders_all_seven_steps() {
+        let store = mem_store();
+        let mut w = FirstLaunch::open(&store);
+        assert!(w.should_show_self(&store));
+        assert!(FirstLaunch::should_show(&store));
+        for expected in Step::all() {
+            assert_eq!(w.flow().step(), *expected);
+            let text = w.screen_text();
+            assert!(text.contains(expected.title()));
+            assert!(text.contains("Step"));
+            match expected {
+                Step::Brains => {
+                    w.set_api_result(&store, "anthropic", true);
+                    w.advance(&store);
+                }
+                Step::FirstProject => break,
+                _ => w.advance(&store),
+            }
+        }
+    }
+
+    #[test]
+    fn onboarding_first_launch_enter_esc_skip_and_resume() {
+        let store = mem_store();
+        let mut w = FirstLaunch::open(&store);
+        assert_eq!(w.flow().step(), Step::Hello);
+        w.press_key(&store, "Enter");
+        assert_eq!(w.flow().step(), Step::LeadName);
+        w.press_key(&store, "Escape");
+        assert_eq!(w.flow().step(), Step::Hello);
+        w.skip(&store);
+        assert_eq!(w.flow().step(), Step::LeadName);
+        w.set_lead_name(&store, "Zara");
+        w.advance(&store);
+        // Restart resumes at the saved step with inputs intact.
+        let again = FirstLaunch::open(&store);
+        assert_eq!(again.flow().step(), Step::LeadLook);
+        assert_eq!(again.flow().snapshot().lead_name, "Zara");
+        assert!(again.should_show_self(&store));
+    }
+
+    #[test]
+    fn onboarding_first_launch_completes_into_workspace() {
+        let store = mem_store();
+        let mut w = drive_to_goal(&store);
+        // Detection never blocks stepping: probe runs off-thread.
+        w.start_background_detection(|| DetectionSnapshot::default());
+        assert!(w.can_continue() || w.flow().step() != Step::Brains);
+        let done = w.complete(&store).expect("complete");
+        assert!(!done.project_id.is_empty());
+        assert!(done.introduction.contains("Dottie"));
+        assert!(done.introduction.contains("market for solar"));
+        // Project created with goal/template, intro posted to its room.
+        let project = store.get_project(&done.project_id).expect("project");
+        assert!(project.goal.contains("market for solar"));
+        let messages = store.list_messages(&done.conversation_id, 10, 0).expect("messages");
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].body, done.introduction);
+        // Completed flow bypasses onboarding and opens the workspace.
+        assert!(!FirstLaunch::should_show(&store));
+        let mut shell = crate::shell::AppShell::open();
+        w.enter_workspace(&mut shell, &done.project_id, &project.name, true);
+        assert_eq!(shell.open_project_id.as_deref(), Some(done.project_id.as_str()));
+        assert!(shell.room_empty().is_none());
+    }
+
+    #[test]
+    fn onboarding_first_launch_bypasses_returning_users() {
+        let store = mem_store();
+        store
+            .create_project(&synapse_store::NewProject {
+                id: "p1".into(),
+                name: "Old work".into(),
+                goal: "goal".into(),
+                folder: String::new(),
+                lead_agent_id: String::new(),
+                template: "custom".into(),
+            })
+            .unwrap();
+        assert!(!FirstLaunch::should_show(&store));
     }
 }

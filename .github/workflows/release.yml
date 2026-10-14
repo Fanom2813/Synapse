@@ -1,4 +1,5 @@
-# Release: tag `vX.Y.Z` -> per-OS installers + `latest.json` on GitHub Releases.
+# Release: run manually (Actions -> release -> Run workflow, input an existing tag `vX.Y.Z`)
+# -> per-OS installers + `latest.json` on GitHub Releases.
 #
 # Unsigned-first: without signing secrets the job still builds every
 # installer and uploads it (local installs show the usual unsigned-app
@@ -10,12 +11,18 @@
 name: release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing git tag to release, e.g. v0.81.0"
+        required: true
+        type: string
 
 permissions:
   contents: write
+
+env:
+  RELEASE_TAG: ${{ inputs.tag }}
 
 jobs:
   package:
@@ -33,6 +40,8 @@ jobs:
             formats: appimage,deb
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -49,7 +58,7 @@ jobs:
       - name: Stamp version from tag
         shell: bash
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           echo "Packaging Synapse $version"
           sed -i.bak "s/^version = \".*\"/version = \"$version\"/" Packager.toml && rm Packager.toml.bak
 
@@ -71,7 +80,7 @@ jobs:
       - name: Upload bundles
         uses: actions/upload-artifact@v4
         with:
-          name: synapse-${{ runner.os }}-${{ github.ref_name }}
+          name: synapse-${{ runner.os }}-${{ inputs.tag }}
           path: |
             target/packager/**/*.dmg
             target/packager/**/*.app.tar.gz
@@ -89,6 +98,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -98,7 +109,7 @@ jobs:
       - name: Assemble updater manifest (latest.json)
         shell: bash
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           python3 - "$version" <<'EOF'
           import glob, json, os, sys
           version = sys.argv[1]
@@ -136,9 +147,10 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.tag }}
           files: |
             dist/**/*
           body: |
-            Synapse ${{ github.ref_name }}.
+            Synapse ${{ inputs.tag }}.
             See `latest.json` for the auto-update manifest (consumed by Settings → Updates).
             Unsigned builds install with the usual OS warnings for unsigned apps.

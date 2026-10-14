@@ -26,17 +26,25 @@ env:
 
 jobs:
   package:
-    name: package (${{ matrix.os }})
+    name: package (${{ matrix.label }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: macos-latest
+            label: macos-arm64
             formats: app,dmg
+          # Intel Mac: cross-compiled on the arm64 runner (GitHub retired the Intel runners).
+          - os: macos-latest
+            label: macos-x64
+            formats: app,dmg
+            target: x86_64-apple-darwin
           - os: windows-latest
+            label: windows
             formats: nsis,wix
           - os: ubuntu-latest
+            label: linux
             formats: appimage,deb
     steps:
       - uses: actions/checkout@v4
@@ -77,12 +85,19 @@ jobs:
             # An empty env var still makes cargo-packager try to sign ("Missing comment in secret key").
             unset CARGO_PACKAGER_SIGN_PRIVATE_KEY CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD
           fi
-          cargo run --release --package synapse-packager -- "${args[@]}"
+          # Build the packager for the host first; CARGO_BUILD_TARGET must only apply to the app build.
+          cargo build --release --package synapse-packager
+          if [ -n "${{ matrix.target }}" ]; then
+            rustup target add "${{ matrix.target }}"
+            export CARGO_BUILD_TARGET="${{ matrix.target }}"
+            args+=(--target "${{ matrix.target }}" --binaries-dir "target/${{ matrix.target }}/release")
+          fi
+          ./target/release/synapse-packager "${args[@]}"
 
       - name: Upload bundles
         uses: actions/upload-artifact@v4
         with:
-          name: synapse-${{ runner.os }}-${{ inputs.tag }}
+          name: synapse-${{ matrix.label }}-${{ inputs.tag }}
           path: |
             target/packager/**/*.dmg
             target/packager/**/*.app.tar.gz

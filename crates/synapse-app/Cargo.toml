@@ -27,6 +27,7 @@ tracing-appender.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 synapse-core = { path = "../synapse-core" }
+synapse-personas = { path = "../synapse-personas" }
 synapse-store = { path = "../synapse-store" }
 synapse-llm = { path = "../synapse-llm" }
 secrecy = { workspace = true }

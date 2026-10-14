@@ -6,6 +6,7 @@ pub mod projects;
 pub mod redact;
 pub mod skills;
 pub mod team_tools;
+pub mod worker;
 
 pub use agents::{
     api_draft, validate_draft, Agent, AgentBackend, AgentDraft, AgentStore, ApiBackend, CliBackend,
@@ -25,3 +26,7 @@ pub use skills::{
     SHELL_NOTE,
 };
 pub use team_tools::{TeamToolError, TeamToolSpec, TeamTools, TEAM_TOOL_NAMES};
+pub use worker::{
+    can_interrupt, can_steer, drain_safe_point, run_worker, AgentContext, RollingSummary,
+    WorkerBackend, WorkerConfig, WorkerOutcome,
+};

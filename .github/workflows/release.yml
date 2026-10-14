@@ -32,10 +32,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            label: macos-arm64
-            formats: app,dmg
-          # Intel Mac: cross-compiled on the arm64 runner (GitHub retired the Intel runners).
+          # macOS: Intel only, cross-compiled on the arm64 runner (GitHub retired the Intel runners).
+          # Apple Silicon users build from source (see README).
           - os: macos-latest
             label: macos-x64
             formats: app,dmg

@@ -41,3 +41,9 @@ Status: specification stage. The build is driven by the docs in [`docs/`](docs/)
 ## License
 
 MIT
+
+## Downloads
+
+Releases ship macOS (Intel), Windows and Linux installers. There is no Apple Silicon build: on an M-series Mac,
+build from source with `cargo build --release -p synapse-app` (or `cargo packager --release -f app,dmg`).
+

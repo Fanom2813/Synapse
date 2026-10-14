@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub mod research_loop;
+pub mod browser;
 pub mod reader;
 pub mod perspectives;
 pub mod factcheck;

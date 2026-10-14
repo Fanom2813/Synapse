@@ -9,6 +9,7 @@ pub mod logging;
 pub mod perf_probe;
 pub mod runtime;
 pub mod settings;
+pub mod settings_providers;
 pub mod shell;
 pub mod theme;
 pub mod titlebar;

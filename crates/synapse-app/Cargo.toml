@@ -28,8 +28,14 @@ anyhow.workspace = true
 thiserror.workspace = true
 synapse-core = { path = "../synapse-core" }
 synapse-store = { path = "../synapse-store" }
+synapse-llm = { path = "../synapse-llm" }
+secrecy = { workspace = true }
 gpui-kit = { workspace = true }
 interprocess = { workspace = true }
 gpui-tray = { workspace = true }
 sysinfo = { workspace = true }
 memory-stats = { workspace = true }
+
+[dev-dependencies]
+wiremock = { workspace = true }
+tokio = { workspace = true }

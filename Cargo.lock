@@ -6710,9 +6710,11 @@ dependencies = [
  "interprocess",
  "memory-stats",
  "reqwest",
+ "secrecy",
  "serde",
  "serde_json",
  "synapse-core",
+ "synapse-llm",
  "synapse-store",
  "sysinfo 0.30.13",
  "thiserror 2.0.21",
@@ -6722,6 +6724,7 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "wiremock",
 ]
 
 [[package]]

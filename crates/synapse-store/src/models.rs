@@ -144,6 +144,40 @@ pub struct NewToolCall {
     pub approved_by: String,
 }
 
+/// One row of the `memories` table (docs/MEMORY.md §2): scoped fact with
+/// provenance (`source_message_id`, `created_by`) and supersession history
+/// (`invalid_at`: `None` while active, timestamp once superseded; physical
+/// deletes only come from explicit forget).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Memory {
+    pub id: String,
+    pub scope: String,
+    pub scope_id: String,
+    pub kind: String,
+    pub text: String,
+    pub source_message_id: String,
+    pub created_by: String,
+    pub valid_from: i64,
+    pub invalid_at: Option<i64>,
+    pub confidence: f64,
+    pub pinned: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NewMemory {
+    pub id: String,
+    pub scope: String,
+    pub scope_id: String,
+    pub kind: String,
+    pub text: String,
+    pub source_message_id: String,
+    pub created_by: String,
+    pub confidence: f64,
+    pub pinned: bool,
+}
+
 /// Unique id helper (`prefix` + millis + counter) without extra dependencies.
 pub fn new_id(prefix: &str) -> String {
     use std::sync::atomic::{AtomicU64, Ordering};

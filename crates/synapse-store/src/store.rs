@@ -11,8 +11,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 use thiserror::Error;
 
 use crate::models::{
-    Agent, Conversation, Message, NewAgent, NewMessage, NewProject, NewSkill, NewToolCall, Project,
-    Skill, ToolCall,
+    Agent, Conversation, Memory, Message, NewAgent, NewMemory, NewMessage, NewProject, NewSkill,
+    NewToolCall, Project, Skill, ToolCall,
 };
 use crate::schema::migrations;
 
@@ -420,7 +420,7 @@ impl Store {
     ) -> Result<Skill> {
         self.with_writer(|c| {
             let n = c.execute(
-                "UPDATE skills SET description=?1, body=?2, sha=?3, updated_at=strftime('%s','now') WHERE id=?4",
+                "UPDATE skills SET description=?1, body=?2, sha=?3, updated_at=CAST(strftime('%s','now') AS INTEGER) WHERE id=?4",
                 params![description, body, sha, id],
             )?;
             if n == 0 {
@@ -501,6 +501,208 @@ impl Store {
                 .query_map(params![project_id, agent_id], row_to_skill)?
                 .collect::<std::result::Result<Vec<_>, _>>()?;
             Ok(rows.into_iter().filter(|s| !hidden.contains(&s.id)).collect())
+        })
+    }
+
+    // -- memories (docs/MEMORY.md §1-2) ----------------------------------
+    // Scopes: user / project / agent / digest. `scope_id` is "" for the
+    // user profile, the project id, the agent id, or the run id for digests.
+    fn check_memory_scope(scope: &str) -> Result<()> {
+        if matches!(scope, "user" | "project" | "agent" | "digest") {
+            Ok(())
+        } else {
+            Err(StoreError::NotFound("memory scope", scope.into()))
+        }
+    }
+
+    pub fn save_memory(&self, m: &NewMemory) -> Result<Memory> {
+        Self::check_memory_scope(&m.scope)?;
+        let text = m.text.trim();
+        if text.is_empty() {
+            return Err(StoreError::NotFound("memory", "empty text".into()));
+        }
+        let id = if m.id.trim().is_empty() {
+            crate::models::new_id("mem")
+        } else {
+            m.id.clone()
+        };
+        self.with_writer(|c| {
+            c.execute(
+                "INSERT INTO memories (id, scope, scope_id, kind, text, source_message_id, created_by, valid_from, confidence, pinned, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,CAST(strftime('%s','now') AS INTEGER),?8,?9,CAST(strftime('%s','now') AS INTEGER),CAST(strftime('%s','now') AS INTEGER))",
+                params![id, m.scope, m.scope_id, m.kind, text, m.source_message_id, m.created_by, m.confidence, m.pinned as i32],
+            )?;
+            get_memory_inner(c, &id)
+        })
+    }
+
+    pub fn get_memory(&self, id: &str) -> Result<Memory> {
+        self.with_reader(|c| get_memory_inner(c, id))
+    }
+
+    /// Active memories for one scope (superseded rows excluded unless
+    /// `include_superseded`); pinned first, then newest.
+    pub fn list_memories(
+        &self,
+        scope: &str,
+        scope_id: &str,
+        include_superseded: bool,
+    ) -> Result<Vec<Memory>> {
+        Self::check_memory_scope(scope)?;
+        self.with_reader(|c| {
+            let sql = if include_superseded {
+                "SELECT id,scope,scope_id,kind,text,source_message_id,created_by,valid_from,invalid_at,confidence,pinned,created_at,updated_at FROM memories WHERE scope=?1 AND scope_id=?2 ORDER BY pinned DESC, created_at, rowid"
+            } else {
+                "SELECT id,scope,scope_id,kind,text,source_message_id,created_by,valid_from,invalid_at,confidence,pinned,created_at,updated_at FROM memories WHERE scope=?1 AND scope_id=?2 AND invalid_at IS NULL ORDER BY pinned DESC, created_at, rowid"
+            };
+            let mut st = c.prepare(sql)?;
+            let rows: Vec<_> = st
+                .query_map(params![scope, scope_id], row_to_memory)?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+    }
+
+    /// Full supersession history for a scope: every row including superseded
+    /// ones, oldest first (MEMORY.md §4: history of superseded versions).
+    pub fn memory_history(&self, scope: &str, scope_id: &str) -> Result<Vec<Memory>> {
+        self.list_memories(scope, scope_id, true)
+    }
+
+    /// Hybrid recall: FTS5 match over active memories (optionally scoped),
+    /// falling back to LIKE when the FTS query is empty/invalid.
+    pub fn search_memories(
+        &self,
+        query: &str,
+        scope: Option<(&str, &str)>,
+        limit: i64,
+    ) -> Result<Vec<Memory>> {
+        let q = query.trim();
+        if q.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.with_reader(|c| {
+            let like = format!("%{q}%");
+            let (sql, scoped) = match scope {
+                Some(_) => (
+                    "SELECT m.id,m.scope,m.scope_id,m.kind,m.text,m.source_message_id,m.created_by,m.valid_from,m.invalid_at,m.confidence,m.pinned,m.created_at,m.updated_at FROM memories_fts f JOIN memories m ON m.rowid=f.rowid WHERE m.invalid_at IS NULL AND m.scope=?1 AND m.scope_id=?2 AND memories_fts MATCH ?3 LIMIT ?4",
+                    true,
+                ),
+                None => (
+                    "SELECT m.id,m.scope,m.scope_id,m.kind,m.text,m.source_message_id,m.created_by,m.valid_from,m.invalid_at,m.confidence,m.pinned,m.created_at,m.updated_at FROM memories_fts f JOIN memories m ON m.rowid=f.rowid WHERE m.invalid_at IS NULL AND memories_fts MATCH ?1 LIMIT ?2",
+                    false,
+                ),
+            };
+            let try_fts: std::result::Result<Vec<Memory>, rusqlite::Error> = (|| {
+                let mut st = c.prepare(sql)?;
+                let rows = if scoped {
+                    let (s, sid) = scope.unwrap();
+                    st.query_map(params![s, sid, q, limit], row_to_memory)?
+                        .collect::<std::result::Result<Vec<_>, _>>()?
+                } else {
+                    st.query_map(params![q, limit], row_to_memory)?
+                        .collect::<std::result::Result<Vec<_>, _>>()?
+                };
+                Ok(rows)
+            })();
+            if let Ok(rows) = try_fts {
+                return Ok(rows);
+            }
+            // Fallback for queries FTS5 cannot parse (e.g. bare "\"").
+            let (fsql, scoped2) = match scope {
+                Some(_) => (
+                    "SELECT id,scope,scope_id,kind,text,source_message_id,created_by,valid_from,invalid_at,confidence,pinned,created_at,updated_at FROM memories WHERE invalid_at IS NULL AND scope=?1 AND scope_id=?2 AND text LIKE ?3 LIMIT ?4",
+                    true,
+                ),
+                None => (
+                    "SELECT id,scope,scope_id,kind,text,source_message_id,created_by,valid_from,invalid_at,confidence,pinned,created_at,updated_at FROM memories WHERE invalid_at IS NULL AND text LIKE ?1 LIMIT ?2",
+                    false,
+                ),
+            };
+            let mut st = c.prepare(fsql)?;
+            let rows = if scoped2 {
+                let (s, sid) = scope.unwrap();
+                st.query_map(params![s, sid, like, limit], row_to_memory)?
+                    .collect::<std::result::Result<Vec<_>, _>>()?
+            } else {
+                st.query_map(params![like, limit], row_to_memory)?
+                    .collect::<std::result::Result<Vec<_>, _>>()?
+            };
+            Ok(rows)
+        })
+    }
+
+    /// Supersede a memory (graphiti-style, MEMORY.md §2): the old row gets
+    /// `invalid_at` and a new active row carries the updated text, keeping
+    /// provenance of the replacement.
+    pub fn supersede_memory(&self, id: &str, new_text: &str, created_by: &str) -> Result<Memory> {
+        let text = new_text.trim();
+        if text.is_empty() {
+            return Err(StoreError::NotFound("memory", "empty text".into()));
+        }
+        self.with_writer(|c| {
+            let old = get_memory_inner(c, id)?;
+            if old.invalid_at.is_some() {
+                return Err(StoreError::NotFound("memory", id.into()));
+            }
+            let now: i64 = c.query_row("SELECT CAST(strftime('%s','now') AS INTEGER)", [], |r| r.get(0))?;
+            c.execute(
+                "UPDATE memories SET invalid_at=?1 WHERE id=?2",
+                params![now, id],
+            )?;
+            let new_id = crate::models::new_id("mem");
+            c.execute(
+                "INSERT INTO memories (id, scope, scope_id, kind, text, source_message_id, created_by, valid_from, confidence, pinned, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,CAST(strftime('%s','now') AS INTEGER),?8,?9,CAST(strftime('%s','now') AS INTEGER),CAST(strftime('%s','now') AS INTEGER))",
+                params![new_id, old.scope, old.scope_id, old.kind, text, old.source_message_id, created_by, old.confidence, old.pinned as i32],
+            )?;
+            get_memory_inner(c, &new_id)
+        })
+    }
+
+    pub fn pin_memory(&self, id: &str, pinned: bool) -> Result<Memory> {
+        self.with_writer(|c| {
+            let n = c.execute(
+                "UPDATE memories SET pinned=?1 WHERE id=?2",
+                params![pinned as i32, id],
+            )?;
+            if n == 0 {
+                return Err(StoreError::NotFound("memory", id.into()));
+            }
+            get_memory_inner(c, id)
+        })
+    }
+
+    pub fn update_memory_text(&self, id: &str, text: &str) -> Result<Memory> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Err(StoreError::NotFound("memory", "empty text".into()));
+        }
+        self.with_writer(|c| {
+            let n = c.execute("UPDATE memories SET text=?1 WHERE id=?2", params![text, id])?;
+            if n == 0 {
+                return Err(StoreError::NotFound("memory", id.into()));
+            }
+            get_memory_inner(c, id)
+        })
+    }
+
+    /// Explicit forget (MEMORY.md §4): physical delete of one row.
+    pub fn delete_memory(&self, id: &str) -> Result<()> {
+        self.with_writer(|c| {
+            c.execute("DELETE FROM memories WHERE id=?1", params![id])?;
+            Ok(())
+        })
+    }
+
+    /// Forget a whole scope ("forget everything from this run" / clear tab).
+    /// Returns the number of rows removed.
+    pub fn clear_scope(&self, scope: &str, scope_id: &str) -> Result<usize> {
+        Self::check_memory_scope(scope)?;
+        self.with_writer(|c| {
+            let n = c.execute(
+                "DELETE FROM memories WHERE scope=?1 AND scope_id=?2",
+                params![scope, scope_id],
+            )?;
+            Ok(n)
         })
     }
 }
@@ -597,6 +799,34 @@ fn get_skill_inner(c: &Connection, id: &str) -> Result<Skill> {
     .ok_or_else(|| StoreError::NotFound("skill", id.into()))
 }
 
+fn row_to_memory(r: &rusqlite::Row<'_>) -> rusqlite::Result<Memory> {
+    Ok(Memory {
+        id: r.get(0)?,
+        scope: r.get(1)?,
+        scope_id: r.get(2)?,
+        kind: r.get(3)?,
+        text: r.get(4)?,
+        source_message_id: r.get(5)?,
+        created_by: r.get(6)?,
+        valid_from: r.get(7)?,
+        invalid_at: r.get(8)?,
+        confidence: r.get(9)?,
+        pinned: r.get::<_, i64>(10)? != 0,
+        created_at: r.get(11)?,
+        updated_at: r.get(12)?,
+    })
+}
+
+fn get_memory_inner(c: &Connection, id: &str) -> Result<Memory> {
+    c.query_row(
+            "SELECT id,scope,scope_id,kind,text,source_message_id,created_by,valid_from,invalid_at,confidence,pinned,created_at,updated_at FROM memories WHERE id=?1",
+            params![id],
+            row_to_memory,
+        )
+        .optional()?
+        .ok_or_else(|| StoreError::NotFound("memory", id.into()))
+}
+
 fn row_to_message(r: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
     Ok(Message {
         id: r.get(0)?,
@@ -638,4 +868,111 @@ fn get_message_inner(c: &Connection, id: &str) -> Result<Message> {
     )
     .optional()?
     .ok_or_else(|| StoreError::NotFound("message", id.into()))
+}
+
+#[cfg(test)]
+mod memories_tests {
+    use super::*;
+    use crate::models::NewMemory;
+
+    fn mem(id: &str, scope: &str, scope_id: &str, text: &str) -> NewMemory {
+        NewMemory {
+            id: id.into(),
+            scope: scope.into(),
+            scope_id: scope_id.into(),
+            kind: "fact".into(),
+            text: text.into(),
+            source_message_id: "m1".into(),
+            created_by: "user".into(),
+            confidence: 0.9,
+            pinned: false,
+        }
+    }
+
+    #[test]
+    fn memories_save_list_search_with_provenance() {
+        let s = Store::open_in_memory().unwrap();
+        let m = s
+            .save_memory(&mem("mem1", "project", "p1", "Scholar search works best"))
+            .unwrap();
+        assert_eq!(m.scope, "project");
+        assert_eq!(m.source_message_id, "m1");
+        assert!(m.invalid_at.is_none());
+        s.save_memory(&mem("mem2", "project", "p1", "Prefers sources from 2025"))
+            .unwrap();
+        s.save_memory(&mem("mem3", "user", "", "Works in fintech"))
+            .unwrap();
+        let list = s.list_memories("project", "p1", false).unwrap();
+        assert_eq!(list.len(), 2);
+        // Scopes do not leak: project list has no user memories.
+        assert!(list.iter().all(|m| m.scope == "project"));
+        let hits = s
+            .search_memories("Scholar", Some(("project", "p1")), 10)
+            .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, "mem1");
+    }
+
+    #[test]
+    fn memories_scopes_user_agent_digest_are_isolated() {
+        let s = Store::open_in_memory().unwrap();
+        s.save_memory(&mem("u1", "user", "", "user fact")).unwrap();
+        s.save_memory(&mem("a1", "agent", "ada", "agent note"))
+            .unwrap();
+        s.save_memory(&mem("d1", "digest", "run1", "run digest summary"))
+            .unwrap();
+        assert_eq!(s.list_memories("user", "", false).unwrap().len(), 1);
+        assert_eq!(s.list_memories("agent", "ada", false).unwrap().len(), 1);
+        assert_eq!(s.list_memories("digest", "run1", false).unwrap().len(), 1);
+        assert!(s.list_memories("project", "p1", false).unwrap().is_empty());
+    }
+
+    #[test]
+    fn memories_supersede_keeps_history_and_hides_old_from_search() {
+        let s = Store::open_in_memory().unwrap();
+        s.save_memory(&mem("m1", "project", "p1", "Old conclusion"))
+            .unwrap();
+        let next = s
+            .supersede_memory("m1", "New conclusion", "agent:ada")
+            .unwrap();
+        assert_eq!(next.text, "New conclusion");
+        assert_eq!(next.created_by, "agent:ada");
+        // Old row invalidated, excluded from active list and search.
+        let active = s.list_memories("project", "p1", false).unwrap();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].id, next.id);
+        let history = s.memory_history("project", "p1").unwrap();
+        assert_eq!(history.len(), 2);
+        let old = s.get_memory("m1").unwrap();
+        assert!(old.invalid_at.is_some());
+        assert!(s
+            .search_memories("Old conclusion", Some(("project", "p1")), 10)
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            s.search_memories("New conclusion", Some(("project", "p1")), 10)
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn memories_pin_delete_and_clear_scope() {
+        let s = Store::open_in_memory().unwrap();
+        s.save_memory(&mem("m1", "project", "p1", "Pinned fact"))
+            .unwrap();
+        s.save_memory(&mem("m2", "project", "p1", "Other fact"))
+            .unwrap();
+        let pinned = s.pin_memory("m1", true).unwrap();
+        assert!(pinned.pinned);
+        // Pinned memories sort first.
+        let list = s.list_memories("project", "p1", false).unwrap();
+        assert_eq!(list[0].id, "m1");
+        s.delete_memory("m2").unwrap();
+        assert_eq!(s.list_memories("project", "p1", false).unwrap().len(), 1);
+        let removed = s.clear_scope("project", "p1").unwrap();
+        assert_eq!(removed, 1);
+        assert!(s.list_memories("project", "p1", true).unwrap().is_empty());
+    }
 }

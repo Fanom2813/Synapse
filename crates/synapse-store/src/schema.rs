@@ -3,7 +3,7 @@
 use rusqlite_migration::{Migrations, M};
 
 pub fn migrations() -> Migrations<'static> {
-    Migrations::new(vec![M::up(SCHEMA_V1), M::up(SCHEMA_V2)])
+    Migrations::new(vec![M::up(SCHEMA_V1), M::up(SCHEMA_V2), M::up(SCHEMA_V3)])
 }
 
 /// Initial schema: full table set from ARCHITECTURE.md §3.
@@ -211,4 +211,22 @@ CREATE TABLE skill_states (
     PRIMARY KEY (skill_id, scope, scope_id)
 );
 CREATE INDEX idx_skill_states_scope ON skill_states(scope, scope_id);
+"#;
+/// V3: memory indexes + FTS5 mirror for `memories.text`.
+const SCHEMA_V3: &str = r#"
+ALTER TABLE memories ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE memories ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_memories_scope ON memories(scope, scope_id);
+CREATE INDEX IF NOT EXISTS idx_memories_valid ON memories(scope, scope_id, invalid_at);
+CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(text, content='memories', content_rowid='rowid');
+CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
+    INSERT INTO memories_fts(rowid, text) VALUES (new.rowid, new.text);
+END;
+CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
+    INSERT INTO memories_fts(memories_fts, rowid, text) VALUES ('delete', old.rowid, old.text);
+END;
+CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
+    INSERT INTO memories_fts(memories_fts, rowid, text) VALUES ('delete', old.rowid, old.text);
+    INSERT INTO memories_fts(rowid, text) VALUES (new.rowid, new.text);
+END;
 "#;

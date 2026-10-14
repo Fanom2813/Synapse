@@ -5,8 +5,8 @@ pub mod schema;
 pub mod store;
 
 pub use models::{
-    new_id, Agent, Conversation, Message, NewAgent, NewMessage, NewProject, NewSkill, NewToolCall,
-    Project, Skill, ToolCall,
+    new_id, Agent, Conversation, Memory, Message, NewAgent, NewMemory, NewMessage, NewProject,
+    NewSkill, NewToolCall, Project, Skill, ToolCall,
 };
 pub use store::{Result, Store, StoreError};
 

@@ -103,3 +103,5 @@ macOS, Windows and Linux (X11 + Wayland) are all first-class. Use `cfg(target_os
 - Edits made by the maintainer outside the loop (workflows, docs, config) are intentional. If `git log`/`git diff`
   shows changes you did not write, treat them as the new baseline: do not revert, "fix", or reject them, and do
   not re-add files they removed. If one blocks your task, note it in the summary and work around it.
+- Keep GitHub storage minimal: the release workflow keeps only the newest release, and build artifacts expire
+  after 1 day. Never add workflows that store builds, caches or artifacts longer.

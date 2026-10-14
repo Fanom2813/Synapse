@@ -206,11 +206,19 @@ impl ShellTool {
 
 /// Whether an OS sandbox can be applied on this platform.
 pub fn sandbox_available() -> bool {
-    nono::Sandbox::is_supported()
+    #[cfg(unix)]
+    {
+        nono::Sandbox::is_supported()
+    }
+    #[cfg(not(unix))]
+    {
+        false
+    }
 }
 
 /// Build the workspace-write capability set: work dir + tmp read-write,
 /// system paths read-only, network blocked unless allowed.
+#[cfg(unix)]
 fn build_capabilities(work_dir: &Path, allow_network: bool) -> nono::CapabilitySet {
     use nono::{AccessMode, CapabilitySet};
     let mut caps = CapabilitySet::new();

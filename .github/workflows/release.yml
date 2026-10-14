@@ -74,6 +74,8 @@ jobs:
             args+=(-k "$RUNNER_TEMP/packager-key.asc")
           else
             echo "No PACKAGER_PRIVATE_KEY secret: building unsigned packages."
+            # An empty env var still makes cargo-packager try to sign ("Missing comment in secret key").
+            unset CARGO_PACKAGER_SIGN_PRIVATE_KEY CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD
           fi
           cargo run --release --package synapse-packager -- "${args[@]}"
 
@@ -90,7 +92,7 @@ jobs:
             target/packager/**/*.deb
             target/packager/**/*.sig
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 1
 
   publish:
     name: publish github release
@@ -154,3 +156,10 @@ jobs:
             Synapse ${{ inputs.tag }}.
             See `latest.json` for the auto-update manifest (consumed by Settings → Updates).
             Unsigned builds install with the usual OS warnings for unsigned apps.
+
+      - name: Keep only the newest release (storage)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --limit 100 --json tagName --jq '.[1:][].tagName' |
+            xargs -r -n1 gh release delete --yes

@@ -7,8 +7,11 @@ license.workspace = true
 [dependencies]
 globset.workspace = true
 libc.workspace = true
-nono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 similar.workspace = true
 thiserror.workspace = true
+
+# nono (Seatbelt / Landlock) is Unix-only; Windows has no sandbox and always asks.
+[target.'cfg(unix)'.dependencies]
+nono.workspace = true

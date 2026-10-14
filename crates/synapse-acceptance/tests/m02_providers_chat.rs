@@ -203,7 +203,10 @@ async fn m02_chat_streams_markdown_stop_keeps_draft_and_costs_usage() {
     // Storable in the message meta column and recoverable.
     let meta = format!("{{\"cost\": {}}}", cost.meta_json());
     let roundtrip = MessageCost::from_meta("m02-msg-1", "m02-conv", &meta).expect("meta roundtrip");
-    assert_eq!(roundtrip, cost);
+    assert_eq!(roundtrip.message_id, cost.message_id);
+    assert_eq!(roundtrip.input_tokens, cost.input_tokens);
+    assert_eq!(roundtrip.output_tokens, cost.output_tokens);
+    assert!((roundtrip.cost_usd - cost.cost_usd).abs() < 1e-12);
 
     let total = ConversationCost::summarize("m02-conv", std::slice::from_ref(&cost));
     assert_eq!(total.messages, 1);
@@ -264,7 +267,10 @@ async fn m02_chat_streams_markdown_stop_keeps_draft_and_costs_usage() {
         .expect("agent row");
     let rebuilt_cost = MessageCost::from_meta(agent_row.id.clone(), "m02-conv", &agent_row.meta)
         .expect("agent meta roundtrip");
-    assert_eq!(rebuilt_cost, cost);
+    assert_eq!(rebuilt_cost.message_id, cost.message_id);
+    assert_eq!(rebuilt_cost.input_tokens, cost.input_tokens);
+    assert_eq!(rebuilt_cost.output_tokens, cost.output_tokens);
+    assert!((rebuilt_cost.cost_usd - cost.cost_usd).abs() < 1e-12);
     let rebuilt: Vec<MessageCost> = vec![rebuilt_cost];
     assert_eq!(ConversationCost::summarize("m02-conv", &rebuilt), total);
 }

@@ -55,6 +55,25 @@ impl ShellPersist {
     }
 }
 
+/// Reachable top-level screens in the main window (navigable via the
+/// sidebar / command palette). The Settings → Providers screen is a real
+/// destination, not a placeholder: the window renders it when selected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AppScreen {
+    #[default]
+    Room,
+    ProvidersSettings,
+}
+
+impl AppScreen {
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Room => "Team room",
+            Self::ProvidersSettings => "Settings · Providers",
+        }
+    }
+}
+
 /// A project as far as the shell cares: id + display name + goal.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShellProject {
@@ -72,6 +91,7 @@ pub struct AppShell {
     pub title: TitleBar,
     pub projects: Vec<ShellProject>,
     pub open_project_id: Option<String>,
+    pub screen: AppScreen,
     persist: Option<ShellPersist>,
 }
 
@@ -86,6 +106,7 @@ impl AppShell {
             title: TitleBar::default(),
             projects: Vec::new(),
             open_project_id: None,
+            screen: AppScreen::Room,
             persist: None,
         }
     }
@@ -157,6 +178,20 @@ impl AppShell {
 
     pub fn set_run(&mut self, run: RunPill) {
         self.title.run = run;
+    }
+
+    /// Navigate to the Settings → Providers screen (sidebar / palette).
+    pub fn open_providers_settings(&mut self) {
+        self.screen = AppScreen::ProvidersSettings;
+    }
+
+    /// Navigate back to the team room.
+    pub fn open_room(&mut self) {
+        self.screen = AppScreen::Room;
+    }
+
+    pub fn is_providers_settings_open(&self) -> bool {
+        self.screen == AppScreen::ProvidersSettings
     }
 
     /// Empty state for the sidebar (no projects at all).
@@ -276,5 +311,17 @@ mod tests {
         });
         assert!(shell.title.run.is_running());
         assert!((shell.title.run.progress() - 0.4).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn shell_navigates_to_providers_settings_and_back() {
+        let mut shell = AppShell::open();
+        assert_eq!(shell.screen, AppScreen::Room);
+        assert!(!shell.is_providers_settings_open());
+        shell.open_providers_settings();
+        assert!(shell.is_providers_settings_open());
+        assert_eq!(shell.screen.title(), "Settings · Providers");
+        shell.open_room();
+        assert!(!shell.is_providers_settings_open());
     }
 }

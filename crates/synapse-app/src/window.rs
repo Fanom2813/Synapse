@@ -33,7 +33,7 @@ impl ShellScreen {
         let sidebar_text = match shell.sidebar_empty() {
             Some(e) => format!("{} | {} [{}]", e.title, e.body, e.action),
             None => format!(
-                "Projects: {}",
+                "Projects: {} · [Settings]",
                 shell
                     .projects
                     .iter()
@@ -42,12 +42,16 @@ impl ShellScreen {
                     .join(", ")
             ),
         };
-        let main_text = match shell.room_empty() {
-            Some(e) => format!("{} | {} [{}]", e.title, e.body, e.action),
-            None => format!(
-                "Team room: {}",
-                shell.open_project_id.as_deref().unwrap_or("")
-            ),
+        let main_text = if shell.is_providers_settings_open() {
+            "Settings · Providers | Search providers, enable them, enter keys, test, defaults [Back]".to_string()
+        } else {
+            match shell.room_empty() {
+                Some(e) => format!("{} | {} [{}]", e.title, e.body, e.action),
+                None => format!(
+                    "Team room: {}",
+                    shell.open_project_id.as_deref().unwrap_or("")
+                ),
+            }
         };
         let panel_text = format!("Panel: {}", shell.layout.right_panel_tab.title());
         Self {

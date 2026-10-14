@@ -217,6 +217,240 @@ impl ProvidersSettings {
     }
 }
 
+/// Toolkit-free view-model for the navigable Settings → Providers screen
+/// (UI.md §2.5). The GPUI view renders from this; all behaviour here runs
+/// without a display. Every mutation persists through the `settings` table
+/// (`ProvidersSettings::save`) and the configured [`SecretStore`], and
+/// reports a human-readable success/failure status for the screen.
+#[derive(Debug, Clone, Default)]
+pub struct ProvidersScreen {
+    settings: ProvidersSettings,
+    query: String,
+    selected: Option<String>,
+    key_input: String,
+    base_url_input: String,
+    status: Option<String>,
+    status_ok: bool,
+    last_test: Option<KeyTestOutcome>,
+}
+
+impl ProvidersScreen {
+    pub fn new(settings: ProvidersSettings) -> Self {
+        Self {
+            settings,
+            ..Self::default()
+        }
+    }
+
+    /// Open the screen, loading persisted settings. Never fails: corrupt
+    /// rows fall back to defaults so the screen always opens.
+    pub fn open(store: &synapse_store::Store) -> Self {
+        Self::new(ProvidersSettings::load(store).unwrap_or_default())
+    }
+
+    pub fn query(&self) -> &str {
+        &self.query
+    }
+
+    pub fn set_query(&mut self, query: impl Into<String>) {
+        self.query = query.into();
+    }
+
+    pub fn selected(&self) -> Option<&str> {
+        self.selected.as_deref()
+    }
+
+    /// Select a catalog provider; pre-fills the endpoint draft.
+    pub fn select(&mut self, catalog: &Catalog, provider_id: &str) -> Result<()> {
+        catalog
+            .provider(provider_id)
+            .map_err(|_| ProvidersError::UnknownProvider(provider_id.into()))?;
+        self.selected = Some(provider_id.to_string());
+        self.base_url_input = self
+            .settings
+            .base_url_for(catalog, provider_id)
+            .unwrap_or_default();
+        self.key_input.clear();
+        self.clear_status();
+        Ok(())
+    }
+
+    pub fn key_input(&self) -> &str {
+        &self.key_input
+    }
+
+    pub fn set_key_input(&mut self, v: impl Into<String>) {
+        self.key_input = v.into();
+    }
+
+    pub fn base_url_input(&self) -> &str {
+        &self.base_url_input
+    }
+
+    pub fn set_base_url_input(&mut self, v: impl Into<String>) {
+        self.base_url_input = v.into();
+    }
+
+    /// Last success/failure line shown on the screen, if any.
+    pub fn status(&self) -> Option<&str> {
+        self.status.as_deref()
+    }
+
+    pub fn status_ok(&self) -> bool {
+        self.status_ok
+    }
+
+    pub fn last_test(&self) -> Option<&KeyTestOutcome> {
+        self.last_test.as_ref()
+    }
+
+    pub fn settings(&self) -> &ProvidersSettings {
+        &self.settings
+    }
+
+    fn set_status(&mut self, ok: bool, msg: impl Into<String>) {
+        self.status_ok = ok;
+        self.status = Some(msg.into());
+    }
+
+    fn clear_status(&mut self) {
+        self.status = None;
+        self.status_ok = false;
+    }
+
+    /// Visible rows for the current search text.
+    pub fn rows(&self, catalog: &Catalog, secrets: &dyn SecretStore) -> Vec<ProviderRow> {
+        search_providers(catalog, &self.settings, secrets, &self.query)
+    }
+
+    /// Enable/disable a provider and persist.
+    pub fn toggle_enabled(
+        &mut self,
+        catalog: &Catalog,
+        store: &synapse_store::Store,
+        provider_id: &str,
+        enabled: bool,
+    ) -> Result<()> {
+        match self.settings.set_enabled(catalog, provider_id, enabled) {
+            Ok(()) => {
+                self.settings.save(store)?;
+                self.set_status(
+                    true,
+                    if enabled {
+                        format!("Enabled {provider_id}.")
+                    } else {
+                        format!("Disabled {provider_id}.")
+                    },
+                );
+                Ok(())
+            }
+            Err(e) => {
+                self.set_status(false, e.to_string());
+                Err(e)
+            }
+        }
+    }
+
+    /// Save the key draft into the secret store (never the DB).
+    pub fn submit_key(&mut self, secrets: &dyn SecretStore, provider_id: &str) -> Result<()> {
+        match self
+            .settings
+            .set_key(secrets, provider_id, self.key_input.trim())
+        {
+            Ok(()) => {
+                self.key_input.clear();
+                self.set_status(true, format!("Saved key for {provider_id}."));
+                Ok(())
+            }
+            Err(e) => {
+                self.set_status(false, e.to_string());
+                Err(e)
+            }
+        }
+    }
+
+    /// Delete the provider key from the secret store.
+    pub fn remove_key(&mut self, secrets: &dyn SecretStore, provider_id: &str) -> Result<()> {
+        match self.settings.remove_key(secrets, provider_id) {
+            Ok(()) => {
+                self.set_status(true, format!("Removed key for {provider_id}."));
+                Ok(())
+            }
+            Err(e) => {
+                self.set_status(false, e.to_string());
+                Err(e)
+            }
+        }
+    }
+
+    /// Save the endpoint draft as the custom base URL override and persist.
+    pub fn submit_base_url(
+        &mut self,
+        store: &synapse_store::Store,
+        provider_id: &str,
+    ) -> Result<()> {
+        self.settings
+            .set_custom_base_url(provider_id, self.base_url_input.trim());
+        self.settings.save(store)?;
+        self.set_status(true, format!("Saved endpoint for {provider_id}."));
+        Ok(())
+    }
+
+    /// Pick the default model for a role and persist.
+    pub fn set_default(
+        &mut self,
+        catalog: &Catalog,
+        store: &synapse_store::Store,
+        role: ModelRole,
+        provider_id: &str,
+        model_id: &str,
+    ) -> Result<()> {
+        match self
+            .settings
+            .set_default(catalog, role, provider_id, model_id)
+        {
+            Ok(()) => {
+                self.settings.save(store)?;
+                self.set_status(
+                    true,
+                    format!("Default {} is now {provider_id}/{model_id}.", role.as_str()),
+                );
+                Ok(())
+            }
+            Err(e) => {
+                self.set_status(false, e.to_string());
+                Err(e)
+            }
+        }
+    }
+
+    /// Test the stored key for the selected (or given) provider against its
+    /// own effective base URL. Shows the success/failure line on the screen.
+    pub async fn test_selected_key(
+        &mut self,
+        catalog: &Catalog,
+        secrets: &dyn SecretStore,
+        client: &reqwest::Client,
+        provider_id: &str,
+    ) -> KeyTestOutcome {
+        use secrecy::ExposeSecret as _;
+        let base = self
+            .settings
+            .base_url_for(catalog, provider_id)
+            .unwrap_or_default();
+        let key = secrets
+            .get("provider", provider_id)
+            .ok()
+            .flatten()
+            .map(|s| s.expose_secret().to_string())
+            .unwrap_or_default();
+        let outcome = test_key(client, &base, &key).await;
+        self.last_test = Some(outcome.clone());
+        self.set_status(outcome.ok(), outcome.user_message());
+        outcome
+    }
+}
+
 /// Searchable catalog list, sorted by name. Case-insensitive substring over
 /// id + name; empty query returns everything. `has_key`/masked values come
 /// from the secret store (values never leave it).
@@ -513,5 +747,120 @@ mod tests {
         let out = test_key(&client, "http://127.0.0.1:9/v1", "k").await;
         assert!(!out.ok());
         assert!(matches!(out, KeyTestOutcome::Failed { .. }));
+    }
+
+    #[test]
+    fn settings_providers_screen_search_enable_key_defaults_persist() {
+        let cat = test_catalog();
+        let store = mem_store();
+        let secrets = MemorySecretStore::new();
+        let mut screen = ProvidersScreen::open(&store);
+        assert!(screen.status().is_none());
+
+        // Search filters the catalog list.
+        screen.set_query("open");
+        let rows = screen.rows(&cat, &secrets);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, "openai");
+        screen.set_query("");
+        assert_eq!(screen.rows(&cat, &secrets).len(), 2);
+
+        // Select + enable persists through the settings table.
+        screen.select(&cat, "openai").unwrap();
+        assert_eq!(screen.selected(), Some("openai"));
+        assert!(screen.select(&cat, "nope").is_err());
+        screen.toggle_enabled(&cat, &store, "openai", true).unwrap();
+        assert!(screen.settings().is_enabled("openai"));
+        assert!(screen.status_ok());
+        assert!(screen.status().unwrap().contains("Enabled"));
+        assert!(screen.toggle_enabled(&cat, &store, "nope", true).is_err());
+        assert!(!screen.status_ok());
+
+        // Enter + remove the key through the secret store only.
+        screen.set_key_input("sk-screen-key-abcdef1234567890");
+        screen.submit_key(&secrets, "openai").unwrap();
+        assert!(screen.settings().has_key(&secrets, "openai"));
+        assert_eq!(screen.key_input(), "");
+        assert!(screen.status_ok());
+        let rows = screen.rows(&cat, &secrets);
+        let row = rows.iter().find(|r| r.id == "openai").unwrap();
+        assert!(row.has_key && row.key_masked.is_some());
+        screen.set_key_input("   ");
+        assert!(screen.submit_key(&secrets, "openai").is_err());
+        assert!(!screen.status_ok());
+        screen.remove_key(&secrets, "openai").unwrap();
+        assert!(!screen.settings().has_key(&secrets, "openai"));
+
+        // Endpoint override + per-role defaults persist.
+        screen.set_base_url_input("http://127.0.0.1:1234/v1");
+        screen.submit_base_url(&store, "openai").unwrap();
+        screen
+            .set_default(&cat, &store, ModelRole::Lead, "openai", "gpt-4o-mini")
+            .unwrap();
+        assert!(screen
+            .set_default(&cat, &store, ModelRole::Lead, "openai", "nope")
+            .is_err());
+        assert!(!screen.status_ok());
+
+        // Reload: flags/defaults/URLs survived, the DB never held the key.
+        let reopened = ProvidersScreen::open(&store);
+        assert!(reopened.settings().is_enabled("openai"));
+        assert_eq!(
+            reopened.settings().default_for(ModelRole::Lead),
+            Some(("openai".to_string(), "gpt-4o-mini".to_string()))
+        );
+        assert_eq!(
+            reopened.settings().base_url_for(&cat, "openai").as_deref(),
+            Some("http://127.0.0.1:1234/v1")
+        );
+        let raw = store.setting_get("providers.enabled").unwrap().unwrap();
+        assert!(!raw.contains("sk-screen-key"));
+    }
+
+    #[tokio::test]
+    async fn settings_providers_screen_test_shows_success_and_failure() {
+        use wiremock::{
+            matchers::{header, method, path},
+            Mock, MockServer, ResponseTemplate,
+        };
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .and(header("authorization", "Bearer good-key"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "object": "list",
+                "data": [{"id": "a"}]
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(401).set_body_string("bad"))
+            .mount(&server)
+            .await;
+        let cat = test_catalog();
+        let store = mem_store();
+        let secrets = MemorySecretStore::new();
+        let client = reqwest::Client::new();
+        let mut screen = ProvidersScreen::open(&store);
+        screen.select(&cat, "openai").unwrap();
+        screen.set_base_url_input(format!("{}/v1", server.uri()));
+        screen.submit_base_url(&store, "openai").unwrap();
+
+        secrets.set("provider", "openai", "good-key").unwrap();
+        let ok = screen
+            .test_selected_key(&cat, &secrets, &client, "openai")
+            .await;
+        assert!(ok.ok());
+        assert!(screen.status_ok());
+        assert!(screen.status().unwrap().contains("1 model(s)"));
+
+        secrets.set("provider", "openai", "bad-key").unwrap();
+        let bad = screen
+            .test_selected_key(&cat, &secrets, &client, "openai")
+            .await;
+        assert!(!bad.ok());
+        assert!(!screen.status_ok());
+        assert!(screen.status().unwrap().contains("failed"));
     }
 }

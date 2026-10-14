@@ -11,7 +11,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 use thiserror::Error;
 
 use crate::models::{
-    Agent, Conversation, Message, NewAgent, NewMessage, NewProject, NewSkill, Project, Skill,
+    Agent, Conversation, Message, NewAgent, NewMessage, NewProject, NewSkill, NewToolCall,
+    Project, Skill, ToolCall,
 };
 use crate::schema::migrations;
 
@@ -329,6 +330,53 @@ impl Store {
         })
     }
 
+    // -- tool calls (audit log) -------------------------------------------
+    pub fn record_tool_call(&self, t: &NewToolCall) -> Result<ToolCall> {
+        self.with_writer(|c| {
+            // Audit rows are standalone (no chat message); the schema FK on
+            // message_id would reject them, so skip FK checks for this insert.
+            let _ = c.execute_batch("PRAGMA foreign_keys=OFF;");
+            let res = c.execute(
+                "INSERT INTO tool_calls (id,message_id,agent_id,tool,args,status,result_summary,approved_by) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                params![t.id, t.message_id, t.agent_id, t.tool, t.args, t.status, t.result_summary, t.approved_by],
+            );
+            let _ = c.execute_batch("PRAGMA foreign_keys=ON;");
+            res?;
+            get_tool_call_inner(c, &t.id)
+        })
+    }
+
+    pub fn update_tool_call(
+        &self,
+        id: &str,
+        status: &str,
+        result_summary: &str,
+        approved_by: &str,
+    ) -> Result<ToolCall> {
+        self.with_writer(|c| {
+            let n = c.execute(
+                "UPDATE tool_calls SET status=?1, result_summary=?2, approved_by=?3 WHERE id=?4",
+                params![status, result_summary, approved_by, id],
+            )?;
+            if n == 0 {
+                return Err(StoreError::NotFound("tool_call", id.into()));
+            }
+            get_tool_call_inner(c, id)
+        })
+    }
+
+    pub fn list_tool_calls(&self, limit: i64, offset: i64) -> Result<Vec<ToolCall>> {
+        self.with_reader(|c| {
+            let mut st = c.prepare(
+                "SELECT id,message_id,agent_id,tool,args,status,result_summary,approved_by,created_at FROM tool_calls ORDER BY created_at, rowid LIMIT ?1 OFFSET ?2",
+            )?;
+            let rows: Vec<_> = st
+                .query_map(params![limit, offset], row_to_tool_call)?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+    }
+
     // -- skills -----------------------------------------------------------
     pub fn create_skill(&self, s: &NewSkill) -> Result<Skill> {
         self.with_writer(|c| {
@@ -497,6 +545,30 @@ fn row_to_agent(r: &rusqlite::Row<'_>) -> rusqlite::Result<Agent> {
         persona_source: r.get(8)?,
         created_at: r.get(9)?,
     })
+}
+
+fn row_to_tool_call(r: &rusqlite::Row<'_>) -> rusqlite::Result<ToolCall> {
+    Ok(ToolCall {
+        id: r.get(0)?,
+        message_id: r.get(1)?,
+        agent_id: r.get(2)?,
+        tool: r.get(3)?,
+        args: r.get(4)?,
+        status: r.get(5)?,
+        result_summary: r.get(6)?,
+        approved_by: r.get(7)?,
+        created_at: r.get(8)?,
+    })
+}
+
+fn get_tool_call_inner(c: &Connection, id: &str) -> Result<ToolCall> {
+    c.query_row(
+        "SELECT id,message_id,agent_id,tool,args,status,result_summary,approved_by,created_at FROM tool_calls WHERE id=?1",
+        params![id],
+        row_to_tool_call,
+    )
+    .optional()?
+    .ok_or_else(|| StoreError::NotFound("tool_call", id.into()))
 }
 
 fn row_to_skill(r: &rusqlite::Row<'_>) -> rusqlite::Result<Skill> {

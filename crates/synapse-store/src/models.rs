@@ -117,6 +117,33 @@ pub struct NewSkill {
     pub local_path: String,
 }
 
+/// One row of the `tool_calls` table (ARCHITECTURE.md §3): every tool call
+/// with redacted args, status and outcome summary for the audit view.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolCall {
+    pub id: String,
+    pub message_id: String,
+    pub agent_id: String,
+    pub tool: String,
+    pub args: String,
+    pub status: String,
+    pub result_summary: String,
+    pub approved_by: String,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NewToolCall {
+    pub id: String,
+    pub message_id: String,
+    pub agent_id: String,
+    pub tool: String,
+    pub args: String,
+    pub status: String,
+    pub result_summary: String,
+    pub approved_by: String,
+}
+
 /// Unique id helper (`prefix` + millis + counter) without extra dependencies.
 pub fn new_id(prefix: &str) -> String {
     use std::sync::atomic::{AtomicU64, Ordering};

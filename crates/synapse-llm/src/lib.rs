@@ -2,6 +2,8 @@
 
 pub mod backend;
 pub mod catalog;
+pub mod keys;
+pub mod local;
 
 pub use backend::{
     AgentEvent, GenaiBackend, LlmError, MockLlm, ModelBackend, Role, ToolCallRequest,

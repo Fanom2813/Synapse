@@ -14,6 +14,12 @@ flate2 = "1"
 tokio = { workspace = true }
 genai = { workspace = true }
 futures = { workspace = true }
+secrecy = { workspace = true }
+keyring = { workspace = true }
+chacha20poly1305 = { workspace = true }
+argon2 = { workspace = true }
+getrandom = { workspace = true }
+synapse-core = { path = "../synapse-core" }
 
 [dev-dependencies]
 wiremock = { workspace = true }

@@ -6,6 +6,7 @@ pub mod artifacts;
 pub mod attachments;
 pub mod bus;
 pub mod memory_files;
+pub mod memory_write;
 pub mod orchestrator;
 pub mod projects;
 pub mod redact;
@@ -34,6 +35,11 @@ pub use memory_files::{
     agent_memory_path, diff_memory_files, digest_memory_path, memory_mirror_needs_import,
     mirror_memory_file, parse_memory_file, project_memory_path, render_memory_file,
     user_memory_path, FileMemory, MemoryChange, MemoryFileError, ParsedEntry,
+};
+pub use memory_write::{
+    extract_proposals, filter_secret_proposals, remember_explicit, should_auto_apply,
+    AppliedMemory, ApplyAction, CandidateFact, ExistingMemory, MemoryOp, Proposal, RememberOutcome,
+    RememberRequest, ReviewQueue,
 };
 pub use orchestrator::{
     convergence_status, is_parallel_phase, phases_for_mode, select_speaker, BudgetEvent,

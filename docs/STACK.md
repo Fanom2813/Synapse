@@ -77,4 +77,4 @@ component list and examples, and on crates.io. Writing it ourselves is the last 
 | Snapshot tests | `insta` |
 | Process RSS/CPU in perf tests | `sysinfo` or `memory-stats` |
 | Lint/format | `cargo fmt`, `cargo clippy -D warnings` |
-| CI | None. All checks (fmt, clippy, tests, perf probes) run on the build box (`sg`). GitHub Actions is used only for `release.yml` (run manually with a tag -> installers). |
+| CI | None. All checks run on the build box (`sg`). GitHub Actions only for `release.yml` (manual run with a tag -> macOS Intel installer; other platforms build from source). |

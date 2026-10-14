@@ -33,17 +33,11 @@ jobs:
       matrix:
         include:
           # macOS: Intel only, cross-compiled on the arm64 runner (GitHub retired the Intel runners).
-          # Apple Silicon users build from source (see README).
+          # Apple Silicon, Windows and Linux users build from source (see README).
           - os: macos-latest
             label: macos-x64
             formats: app,dmg
             target: x86_64-apple-darwin
-          - os: windows-latest
-            label: windows
-            formats: nsis,wix
-          - os: ubuntu-latest
-            label: linux
-            formats: appimage,deb
     steps:
       - uses: actions/checkout@v4
         with:

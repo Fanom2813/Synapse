@@ -44,6 +44,5 @@ MIT
 
 ## Downloads
 
-Releases ship macOS (Intel), Windows and Linux installers. There is no Apple Silicon build: on an M-series Mac,
-build from source with `cargo build --release -p synapse-app` (or `cargo packager --release -f app,dmg`).
-
+Releases ship a macOS (Intel) installer only. On Apple Silicon, Windows or Linux, build from source:
+`cargo build --release -p synapse-app` (or `cargo packager --release -f <formats>`, see `Packager.toml`).

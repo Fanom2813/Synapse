@@ -12,3 +12,4 @@ pub mod settings;
 pub mod shell;
 pub mod theme;
 pub mod titlebar;
+pub mod window;

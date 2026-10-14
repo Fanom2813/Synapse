@@ -10,5 +10,5 @@ fn main() {
         }
         return;
     }
-    println!("synapse: app shell lands in M1 task 2 (see docs/MILESTONES.md).");
+    synapse_app::window::launch();
 }

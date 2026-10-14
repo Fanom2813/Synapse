@@ -1,0 +1,51 @@
+# Synapse packaging config for `cargo packager` (see docs/STACK.md, M10).
+#
+# Unsigned local build (no signing credentials needed):
+#   cargo build --release -p synapse-app   # or let before-packaging-command do it
+#   cargo packager --release
+# (`cargo packager` is aliased in .cargo/config.toml to the in-workspace
+# wrapper `synapse-packager`, which runs the real cargo-packager CLI.)
+#
+# Per-platform formats (CI picks with `-f`, see .github/workflows/release.yml):
+#   macOS:  app bundle + dmg   (`cargo packager --release -f app,dmg`)
+#   Windows: nsis installer + wix msi (`cargo packager --release -f nsis,wix`)
+#   Linux:  appimage + deb      (`cargo packager --release -f appimage,deb`)
+#
+# Signing is optional. Unsigned bundles build and install locally (with the
+# usual OS warnings for unsigned apps). To ship signed + auto-updatable
+# builds, set PACKAGER signing secrets (see .github/workflows/release.yml)
+# and pass `-k <private-key>`; the updater manifest (`latest.json`) is
+# assembled by the release workflow from the `.sig` sidecars.
+#
+# The `version` below tracks the workspace version in the root Cargo.toml.
+# The release workflow overwrites it with the tag (vX.Y.Z) before packaging.
+
+name = "synapse"
+product-name = "Synapse"
+version = "0.1.0"
+identifier = "ai.synapse.app"
+description = "A native desktop app where a team of AI agents brainstorms, researches, and analyses together."
+authors = ["Synapse Contributors"]
+homepage = "https://github.com/synapse-ai/synapse"
+license-file = "LICENSE"
+copyright = "MIT"
+category = "Productivity"
+
+before-packaging-command = "cargo build --release -p synapse-app"
+out-dir = "target/packager"
+binaries-dir = "target/release"
+binaries = [{ path = "synapse", main = true }]
+icons = ["assets/icons/icon-512.png", "assets/icons/icon-256.png"]
+resources = ["assets/personas", "assets/skills", "assets/connectors.json", "assets/models.json.gz", "LICENSE"]
+
+[deb]
+depends = []
+
+[appimage]
+
+[dmg]
+
+[nsis]
+
+[wix]
+languages = ["English"]

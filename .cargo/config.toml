@@ -1,0 +1,6 @@
+# `cargo packager` without `cargo install`: the alias runs the in-workspace
+# `synapse-packager` crate, which forwards to the real cargo-packager CLI
+# (pinned in [workspace.dependencies]). Same flags, same Packager.toml,
+# unsigned local builds need no credentials.
+[alias]
+packager = "run --quiet --package synapse-packager --"

@@ -1,0 +1,16 @@
+[package]
+name = "synapse-packager"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "In-workspace `cargo packager` CLI: runs the real cargo-packager (pinned in [workspace.dependencies]) without requiring `cargo install`."
+
+[[bin]]
+name = "synapse-packager"
+path = "src/main.rs"
+
+[dependencies]
+cargo-packager = { workspace = true }
+
+[dev-dependencies]
+toml = { workspace = true }

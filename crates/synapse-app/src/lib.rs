@@ -36,4 +36,5 @@ pub mod sources_panel;
 pub mod team_room;
 pub mod theme;
 pub mod titlebar;
+pub mod updater;
 pub mod window;

@@ -1,0 +1,144 @@
+# Release: tag `vX.Y.Z` -> per-OS installers + `latest.json` on GitHub Releases.
+#
+# Unsigned-first: without signing secrets the job still builds every
+# installer and uploads it (local installs show the usual unsigned-app
+# warnings). With `PACKAGER_PRIVATE_KEY` (+ optional
+# `PACKAGER_PRIVATE_KEY_PASSWORD`) set as repo secrets, bundles are signed
+# and `latest.json` carries signatures the in-app updater verifies.
+# macOS notarization / Windows Authenticode are *not* wired: out of scope
+# for unsigned local packaging; add them later per docs/PLATFORM-NOTES.md.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            formats: app,dmg
+          - os: windows-latest
+            formats: nsis,wix
+          - os: ubuntu-latest
+            formats: appimage,deb
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: >
+          sudo apt-get update &&
+          sudo apt-get install -y build-essential pkg-config
+          libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev
+          libfontconfig-dev libfreetype-dev libssl-dev libx11-xcb-dev libxcb1-dev libdbus-1-dev
+
+      - name: Stamp version from tag
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "Packaging Synapse $version"
+          sed -i.bak "s/^version = \".*\"/version = \"$version\"/" Packager.toml && rm Packager.toml.bak
+
+      - name: Build installers (unsigned unless signing secrets exist)
+        shell: bash
+        env:
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY: ${{ secrets.PACKAGER_PRIVATE_KEY }}
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD: ${{ secrets.PACKAGER_PRIVATE_KEY_PASSWORD }}
+        run: |
+          args=(--release -f "${{ matrix.formats }}")
+          if [ -n "$CARGO_PACKAGER_SIGN_PRIVATE_KEY" ]; then
+            echo "$CARGO_PACKAGER_SIGN_PRIVATE_KEY" > "$RUNNER_TEMP/packager-key.asc"
+            args+=(-k "$RUNNER_TEMP/packager-key.asc")
+          else
+            echo "No PACKAGER_PRIVATE_KEY secret: building unsigned packages."
+          fi
+          cargo run --release --package synapse-packager -- "${args[@]}"
+
+      - name: Upload bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: synapse-${{ runner.os }}-${{ github.ref_name }}
+          path: |
+            target/packager/**/*.dmg
+            target/packager/**/*.app.tar.gz
+            target/packager/**/*.exe
+            target/packager/**/*.msi
+            target/packager/**/*.AppImage*
+            target/packager/**/*.deb
+            target/packager/**/*.sig
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: publish github release
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Assemble updater manifest (latest.json)
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          python3 - "$version" <<'EOF'
+          import glob, json, os, sys
+          version = sys.argv[1]
+          platforms = {}
+          for path in sorted(glob.glob("dist/**/*", recursive=True)):
+              name = os.path.basename(path)
+              target = None
+              if name.endswith(".app.tar.gz"):
+                  target = "macos-aarch64" if "aarch64" in name or "arm64" in name else "macos-x86_64"
+                  fmt = "app"
+              elif name.endswith(".AppImage.tar.gz") or name.endswith(".AppImage"):
+                  target = "linux-x86_64"
+                  fmt = "appimage"
+              elif name.endswith("-setup.exe"):
+                  target = "windows-x86_64"
+                  fmt = "nsis"
+              elif name.endswith(".msi"):
+                  target = "windows-x86_64"
+                  fmt = "wix"
+              if target is None or target in platforms:
+                  continue
+              sig_path = path + ".sig"
+              sig = open(sig_path).read().strip() if os.path.exists(sig_path) else ""
+              platforms[target] = {
+                  "url": f"https://github.com/Fanom2813/Synapse/releases/download/v{version}/{name}",
+                  "signature": sig,
+                  "format": fmt,
+              }
+          manifest = {"version": version, "notes": f"Synapse {version}", "platforms": platforms}
+          with open("dist/latest.json", "w") as f:
+              json.dump(manifest, f, indent=2)
+          print(json.dumps(manifest, indent=2))
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/**/*
+          body: |
+            Synapse ${{ github.ref_name }}.
+            See `latest.json` for the auto-update manifest (consumed by Settings → Updates).
+            Unsigned builds install with the usual OS warnings for unsigned apps.

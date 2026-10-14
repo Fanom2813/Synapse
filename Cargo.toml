@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "crates/synapse-packager",
   "crates/synapse-app",
   "crates/synapse-core",
   "crates/synapse-store",
@@ -68,6 +69,8 @@ gpui-tray = { version = "0.1", default-features = false, features = ["gpui-kit",
 global-hotkey = "0.8"
 notify-rust = "4"
 auto-launch = "0.6"
+cargo-packager = "=0.11.8"
+cargo-packager-updater = "=0.2.3"
 # Research / browser / embeddings (lazy-loaded, behind cargo features where heavy).
 model2vec-rs = "0.3"
 pdf-extract = "0.7"

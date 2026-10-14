@@ -9,7 +9,7 @@ pub mod attachments_ui;
 pub mod avatar;
 pub mod avatar_packs;
 pub mod chat_view;
-    pub mod cli_agents_ui;
+pub mod cli_agents_ui;
 pub mod connectors;
 pub mod conversation_map;
 pub mod empty;

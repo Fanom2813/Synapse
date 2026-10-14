@@ -7,7 +7,7 @@
 //! global search across memory and archive content. In-memory storage only.
 
 use synapse_app::global_search::{global_search, GlobalSearchKind};
-use synapse_app::memory_screens::{MemoryProposal, MemoryScreens, MemoryScopeTab};
+use synapse_app::memory_screens::{MemoryProposal, MemoryScopeTab, MemoryScreens};
 use synapse_core::memory_recall::{
     active_memories, archive_search, build_memory_context, recall_search, ArchiveItem, MemoryView,
 };
@@ -127,8 +127,14 @@ fn m08_scoped_persistence_and_supersession_history() {
     );
 
     // Each scope lists only its own rows: no project leaks into another.
-    assert_eq!(store.list_memories("project", "p1", false).unwrap().len(), 1);
-    assert_eq!(store.list_memories("project", "p2", false).unwrap().len(), 1);
+    assert_eq!(
+        store.list_memories("project", "p1", false).unwrap().len(),
+        1
+    );
+    assert_eq!(
+        store.list_memories("project", "p2", false).unwrap().len(),
+        1
+    );
     assert_eq!(store.list_memories("user", "", false).unwrap().len(), 1);
     assert_eq!(store.list_memories("agent", "ada", false).unwrap().len(), 1);
 
@@ -220,15 +226,36 @@ fn m08_memory_writing_rejects_secrets_and_proposes_reviews() {
             ..CandidateFact::new("from a sensitive page", "fact")
         },
     ];
-    let (decisions, dropped) = extract_proposals(&redactor, "project", "p1", "agent:ada", &candidates, &existing);
+    let (decisions, dropped) = extract_proposals(
+        &redactor,
+        "project",
+        "p1",
+        "agent:ada",
+        &candidates,
+        &existing,
+    );
     assert_eq!(dropped, 2);
     let ops: Vec<MemoryOp> = decisions.iter().map(|d| d.op).collect();
-    assert!(ops.contains(&MemoryOp::Noop), "duplicate must NOOP: {ops:?}");
-    assert!(ops.contains(&MemoryOp::Update), "near-duplicate must UPDATE: {ops:?}");
-    assert!(ops.contains(&MemoryOp::Delete), "retraction must DELETE: {ops:?}");
+    assert!(
+        ops.contains(&MemoryOp::Noop),
+        "duplicate must NOOP: {ops:?}"
+    );
+    assert!(
+        ops.contains(&MemoryOp::Update),
+        "near-duplicate must UPDATE: {ops:?}"
+    );
+    assert!(
+        ops.contains(&MemoryOp::Delete),
+        "retraction must DELETE: {ops:?}"
+    );
     assert!(ops.contains(&MemoryOp::Add), "new fact must ADD: {ops:?}");
     let update = decisions.iter().find(|d| d.op == MemoryOp::Update).unwrap();
-    assert_eq!(update.apply_action(), synapse_core::memory_write::ApplyAction::Supersede { target_id: "e1".into() });
+    assert_eq!(
+        update.apply_action(),
+        synapse_core::memory_write::ApplyAction::Supersede {
+            target_id: "e1".into()
+        }
+    );
 
     // Defence in depth: model-produced proposals carrying secrets are split
     // out before they can reach the store.
@@ -297,12 +324,54 @@ fn m08_memory_writing_rejects_secrets_and_proposes_reviews() {
 #[test]
 fn m08_recall_scope_boundaries_exclude_superseded() {
     let store = Store::open_in_memory().unwrap();
-    save(&store, "u1", "user", "", "preference", "prefers fintech ledgers", "");
-    save(&store, "p1m1", "project", "p1", "fact", "fintech ledger pilot results", "m1");
-    save(&store, "p2m1", "project", "p2", "fact", "fintech ledger other project", "m2");
-    save(&store, "a1", "agent", "ada", "lesson", "fintech ledger search tips", "");
-    save(&store, "old1", "project", "p1", "fact", "fintech outdated claim", "m3");
-    store.supersede_memory("old1", "fintech corrected claim", "agent:ada").unwrap();
+    save(
+        &store,
+        "u1",
+        "user",
+        "",
+        "preference",
+        "prefers fintech ledgers",
+        "",
+    );
+    save(
+        &store,
+        "p1m1",
+        "project",
+        "p1",
+        "fact",
+        "fintech ledger pilot results",
+        "m1",
+    );
+    save(
+        &store,
+        "p2m1",
+        "project",
+        "p2",
+        "fact",
+        "fintech ledger other project",
+        "m2",
+    );
+    save(
+        &store,
+        "a1",
+        "agent",
+        "ada",
+        "lesson",
+        "fintech ledger search tips",
+        "",
+    );
+    save(
+        &store,
+        "old1",
+        "project",
+        "p1",
+        "fact",
+        "fintech outdated claim",
+        "m3",
+    );
+    store
+        .supersede_memory("old1", "fintech corrected claim", "agent:ada")
+        .unwrap();
 
     let all = all_views(&store);
     // Superseded rows never enter context.
@@ -349,8 +418,24 @@ fn m08_recall_scope_boundaries_exclude_superseded() {
 #[test]
 fn m08_vector_search_falls_back_when_unavailable() {
     let store = Store::open_in_memory().unwrap();
-    save(&store, "v1", "project", "p1", "fact", "mobile money ledger reconciliation", "");
-    save(&store, "v2", "project", "p1", "fact", "unrelated tea preferences", "");
+    save(
+        &store,
+        "v1",
+        "project",
+        "p1",
+        "fact",
+        "mobile money ledger reconciliation",
+        "",
+    );
+    save(
+        &store,
+        "v2",
+        "project",
+        "p1",
+        "fact",
+        "unrelated tea preferences",
+        "",
+    );
     for id in ["v1", "v2"] {
         let n = store.index_memory_for_vector(id).unwrap();
         assert!(n > 0, "memory {id} must index chunks");
@@ -360,16 +445,22 @@ fn m08_vector_search_falls_back_when_unavailable() {
     synapse_store::vector::set_vectors_available(true);
     let _ = synapse_store::vector::embeddings(); // lazy init, then present
     synapse_store::vector::set_vectors_available(true);
-    let hybrid = store.hybrid_search_memories("ledger", Some(("project", "p1")), 5).unwrap();
+    let hybrid = store
+        .hybrid_search_memories("ledger", Some(("project", "p1")), 5)
+        .unwrap();
     assert!(!hybrid.is_empty());
     assert!(hybrid.iter().any(|h| h.memory.id == "v1"));
 
     // With the model missing/unloaded, search degrades to FTS instead of
     // failing — the same query still finds the ledger memory.
     synapse_store::vector::set_vectors_available(false);
-    let pure = store.vector_search_chunks("ledger", Some("memory"), 5).unwrap();
+    let pure = store
+        .vector_search_chunks("ledger", Some("memory"), 5)
+        .unwrap();
     assert!(pure.is_empty());
-    let fallback = store.hybrid_search_memories("ledger", Some(("project", "p1")), 5).unwrap();
+    let fallback = store
+        .hybrid_search_memories("ledger", Some(("project", "p1")), 5)
+        .unwrap();
     assert!(!fallback.is_empty(), "FTS fallback must still hit");
     assert!(fallback.iter().any(|h| h.memory.id == "v1"));
     synapse_store::vector::set_vectors_available(true);
@@ -391,13 +482,29 @@ fn m08_memory_review_controls() {
     screen
         .propose(
             &store,
-            MemoryProposal::new("project", "p1", "fact", "Proposed one", "m1", "agent:ada", 0.7),
+            MemoryProposal::new(
+                "project",
+                "p1",
+                "fact",
+                "Proposed one",
+                "m1",
+                "agent:ada",
+                0.7,
+            ),
         )
         .unwrap();
     screen
         .propose(
             &store,
-            MemoryProposal::new("project", "p1", "fact", "Proposed two", "m1", "agent:ada", 0.7),
+            MemoryProposal::new(
+                "project",
+                "p1",
+                "fact",
+                "Proposed two",
+                "m1",
+                "agent:ada",
+                0.7,
+            ),
         )
         .unwrap();
     assert_eq!(screen.pending_count(), 2);
@@ -450,7 +557,15 @@ fn m08_memory_review_controls() {
     let queued = screen
         .propose(
             &store,
-            MemoryProposal::new("project", "p1", "fact", "Queued while paused", "m1", "agent:ada", 0.8),
+            MemoryProposal::new(
+                "project",
+                "p1",
+                "fact",
+                "Queued while paused",
+                "m1",
+                "agent:ada",
+                0.8,
+            ),
         )
         .unwrap();
     assert!(queued.is_none());
@@ -480,7 +595,9 @@ fn m08_global_search_covers_memory_and_archive() {
             })
             .unwrap();
     }
-    store.create_conversation("c1", "p1", "team_room", "Room").unwrap();
+    store
+        .create_conversation("c1", "p1", "team_room", "Room")
+        .unwrap();
     store
         .insert_message(&NewMessage {
             id: "m1".into(),
@@ -496,20 +613,44 @@ fn m08_global_search_covers_memory_and_archive() {
         })
         .unwrap();
     store
-        .save_source("s1", "p2", "https://example.com/fintech", "Fintech report", "mobile money fintech ledger analysis")
+        .save_source(
+            "s1",
+            "p2",
+            "https://example.com/fintech",
+            "Fintech report",
+            "mobile money fintech ledger analysis",
+        )
         .unwrap();
-    store.save_artifact("a1", "p1", "Market report", "report").unwrap();
+    store
+        .save_artifact("a1", "p1", "Market report", "report")
+        .unwrap();
     store
         .save_artifact_version("a1", 1, "fintech adoption ledger summary", "first draft")
         .unwrap();
-    save(&store, "mem1", "project", "p2", "fact", "fintech agent prefers morning runs", "m1");
+    save(
+        &store,
+        "mem1",
+        "project",
+        "p2",
+        "fact",
+        "fintech agent prefers morning runs",
+        "m1",
+    );
 
     let hits = global_search(&store, "fintech", 5);
     let kinds: Vec<GlobalSearchKind> = hits.iter().map(|h| h.kind).collect();
-    for want in [GlobalSearchKind::Message, GlobalSearchKind::Source, GlobalSearchKind::Artifact, GlobalSearchKind::Memory] {
+    for want in [
+        GlobalSearchKind::Message,
+        GlobalSearchKind::Source,
+        GlobalSearchKind::Artifact,
+        GlobalSearchKind::Memory,
+    ] {
         assert!(kinds.contains(&want), "missing {want:?} in {kinds:?}");
     }
-    let mem = hits.iter().find(|h| h.kind == GlobalSearchKind::Memory).unwrap();
+    let mem = hits
+        .iter()
+        .find(|h| h.kind == GlobalSearchKind::Memory)
+        .unwrap();
     assert!(mem.snippet.to_lowercase().contains("fintech"));
     assert!(global_search(&store, "   ", 5).is_empty());
 }

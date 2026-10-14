@@ -542,7 +542,10 @@ impl FirstLaunch {
         } else {
             self.flow.blocked_hint().unwrap_or("Blocked")
         };
-        format!("Step {n}/{total} · {} · {fields} [{cont}] [Skip] [Back]", step.title())
+        format!(
+            "Step {n}/{total} · {} · {fields} [{cont}] [Skip] [Back]",
+            step.title()
+        )
     }
 
     /// Start background backend detection without blocking the UI thread.
@@ -593,12 +596,7 @@ impl FirstLaunch {
         self.persist(store);
     }
 
-    pub fn set_api_result(
-        &mut self,
-        store: &synapse_store::Store,
-        provider: &str,
-        ok: bool,
-    ) {
+    pub fn set_api_result(&mut self, store: &synapse_store::Store, provider: &str, ok: bool) {
         self.flow.set_api_result(provider, ok);
         self.persist(store);
     }
@@ -727,7 +725,12 @@ fn short_project_name(goal: &str) -> String {
     if g.is_empty() {
         return "First project".to_string();
     }
-    let first: String = g.split(['.', '!', '?', '\n']).next().unwrap_or(g).trim().to_string();
+    let first: String = g
+        .split(['.', '!', '?', '\n'])
+        .next()
+        .unwrap_or(g)
+        .trim()
+        .to_string();
     if first.chars().count() <= 60 {
         first
     } else {
@@ -1007,14 +1010,19 @@ mod onboarding_tests {
         // Project created with goal/template, intro posted to its room.
         let project = store.get_project(&done.project_id).expect("project");
         assert!(project.goal.contains("market for solar"));
-        let messages = store.list_messages(&done.conversation_id, 10, 0).expect("messages");
+        let messages = store
+            .list_messages(&done.conversation_id, 10, 0)
+            .expect("messages");
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].body, done.introduction);
         // Completed flow bypasses onboarding and opens the workspace.
         assert!(!FirstLaunch::should_show(&store));
         let mut shell = crate::shell::AppShell::open();
         w.enter_workspace(&mut shell, &done.project_id, &project.name, true);
-        assert_eq!(shell.open_project_id.as_deref(), Some(done.project_id.as_str()));
+        assert_eq!(
+            shell.open_project_id.as_deref(),
+            Some(done.project_id.as_str())
+        );
         assert!(shell.room_empty().is_none());
     }
 

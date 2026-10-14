@@ -8272,6 +8272,7 @@ name = "synapse-acceptance"
 version = "0.1.0"
 dependencies = [
  "agent-client-protocol",
+ "cargo-packager-updater",
  "serde_json",
  "synapse-acp",
  "synapse-app",

@@ -236,13 +236,13 @@ pub fn ensure_chat_conversation(store: &synapse_store::Store) -> Option<String> 
 #[cfg(not(test))]
 pub fn launch() {
     use crate::chat_view::ChatView;
-    use gpui_kit::component::input::{InputEvent, InputState};
     use crate::lifecycle::{
         apply_tray_command, bind_single_instance, handle_second_launch, notify_existing_instance,
         read_instance_message, tray_menu_items, OpenEffect, TrayCommand, WindowLifecycle,
         DESTROY_HIDDEN_AFTER_SECS,
     };
     use gpui_kit::component::button::{Button, ButtonVariants};
+    use gpui_kit::component::input::{InputEvent, InputState};
     use gpui_kit::*;
 
     actions!(
@@ -407,8 +407,7 @@ pub fn launch() {
             let flow = match open_store() {
                 Some(s) => FirstLaunch::open(&s),
                 None => {
-                    let mem = synapse_store::Store::open_in_memory()
-                        .expect("in-memory store");
+                    let mem = synapse_store::Store::open_in_memory().expect("in-memory store");
                     FirstLaunch::open(&mem)
                 }
             };
@@ -418,8 +417,11 @@ pub fn launch() {
                     .placeholder("Lead name")
                     .default_value(snap.lead_name.clone())
             });
-            let key_input =
-                cx.new(|cx| InputState::new(window, cx).placeholder("API key").masked(true));
+            let key_input = cx.new(|cx| {
+                InputState::new(window, cx)
+                    .placeholder("API key")
+                    .masked(true)
+            });
             let goal_input = cx.new(|cx| {
                 InputState::new(window, cx)
                     .placeholder("What should the team figure out?")
@@ -579,8 +581,8 @@ pub fn launch() {
                             let (backend, model, persist) = chat_config();
                             let conversation_id = done.conversation_id.clone();
                             let chat = cx.new(|cx| {
-                                let mut view = ChatView::new(window, cx, backend, model)
-                                    .with_persist(persist);
+                                let mut view =
+                                    ChatView::new(window, cx, backend, model).with_persist(persist);
                                 if let Some(store) = view.persist_store() {
                                     view.open_conversation(&store, &conversation_id);
                                 }
@@ -626,7 +628,8 @@ pub fn launch() {
                 self.status = "Could not save that key (keychain unavailable).".to_string();
             } else {
                 if let Some(store) = open_store() {
-                    self.flow.set_api_result(&store, &self.provider.clone(), true);
+                    self.flow
+                        .set_api_result(&store, &self.provider.clone(), true);
                 }
                 self.status = format!("{} key saved ✓", self.provider);
             }
@@ -671,22 +674,24 @@ pub fn launch() {
                 .size_full()
                 .p_4()
                 .gap_3()
-                .on_key_down(cx.listener(
-                    |this: &mut Self, event: &KeyDownEvent, window, cx| {
+                .on_key_down(
+                    cx.listener(|this: &mut Self, event: &KeyDownEvent, window, cx| {
                         let key: &str = &event.keystroke.key;
                         match key {
                             "enter" => this.do_continue(window, cx),
                             "escape" => this.do_back(cx),
                             _ => {}
                         }
-                    },
-                ))
+                    }),
+                )
                 .child(div().child(format!("Step {n}/{total}")))
                 .child(div().child(step.title().to_string()));
             match step {
                 Step::Hello => {
                     col = col
-                        .child(div().child("Your research team lives here. One question at a time."))
+                        .child(
+                            div().child("Your research team lives here. One question at a time."),
+                        )
                         .child(
                             Button::new("ob-import")
                                 .label("I've used Synapse before → skip")
@@ -695,34 +700,27 @@ pub fn launch() {
                         );
                 }
                 Step::LeadName => {
-                    col = col
-                        .child(Input::new(&self.name_input))
-                        .child(
+                    col =
+                        col.child(Input::new(&self.name_input)).child(
                             div()
                                 .flex()
                                 .flex_row()
                                 .gap_2()
-                                .child(
-                                    Button::new("ob-name-dottie")
-                                        .label("Dottie")
-                                        .on_click(cx.listener(|this, _, window, cx| {
-                                            this.set_name_chip(window, cx, "Dottie");
-                                        })),
-                                )
-                                .child(
-                                    Button::new("ob-name-mira")
-                                        .label("Mira")
-                                        .on_click(cx.listener(|this, _, window, cx| {
-                                            this.set_name_chip(window, cx, "Mira");
-                                        })),
-                                )
-                                .child(
-                                    Button::new("ob-name-zara")
-                                        .label("Zara")
-                                        .on_click(cx.listener(|this, _, window, cx| {
-                                            this.set_name_chip(window, cx, "Zara");
-                                        })),
-                                ),
+                                .child(Button::new("ob-name-dottie").label("Dottie").on_click(
+                                    cx.listener(|this, _, window, cx| {
+                                        this.set_name_chip(window, cx, "Dottie");
+                                    }),
+                                ))
+                                .child(Button::new("ob-name-mira").label("Mira").on_click(
+                                    cx.listener(|this, _, window, cx| {
+                                        this.set_name_chip(window, cx, "Mira");
+                                    }),
+                                ))
+                                .child(Button::new("ob-name-zara").label("Zara").on_click(
+                                    cx.listener(|this, _, window, cx| {
+                                        this.set_name_chip(window, cx, "Zara");
+                                    }),
+                                )),
                         );
                 }
                 Step::LeadLook => {
@@ -730,76 +728,72 @@ pub fn launch() {
                         "{} · {} · {} {}",
                         snap.shape, snap.palette, snap.eyes, snap.accessory
                     );
-                    col = col
-                        .child(div().child(look))
-                        .child(
-                            div()
-                                .flex()
-                                .flex_row()
-                                .gap_2()
-                                .child(Button::new("ob-shape-bean").label("bean").on_click(
-                                    cx.listener(|this, _, _, cx| {
+                    col = col.child(div().child(look)).child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .gap_2()
+                            .child(Button::new("ob-shape-bean").label("bean").on_click(
+                                cx.listener(|this, _, _, cx| {
+                                    if let Some(store) = open_store() {
+                                        let s = this.flow.flow().snapshot().clone();
+                                        this.flow.set_look(
+                                            &store,
+                                            "bean",
+                                            &s.palette,
+                                            &s.eyes,
+                                            &s.accessory,
+                                        );
+                                    }
+                                    cx.notify();
+                                }),
+                            ))
+                            .child(Button::new("ob-shape-round").label("round").on_click(
+                                cx.listener(|this, _, _, cx| {
+                                    if let Some(store) = open_store() {
+                                        let s = this.flow.flow().snapshot().clone();
+                                        this.flow.set_look(
+                                            &store,
+                                            "round",
+                                            &s.palette,
+                                            &s.eyes,
+                                            &s.accessory,
+                                        );
+                                    }
+                                    cx.notify();
+                                }),
+                            ))
+                            .child(
+                                Button::new("ob-surprise")
+                                    .label("Surprise me")
+                                    .secondary()
+                                    .on_click(cx.listener(|this, _, _, cx| {
                                         if let Some(store) = open_store() {
-                                            let s = this.flow.flow().snapshot().clone();
+                                            // Deterministic shuffle from the name so it is
+                                            // stable across restarts, bounced by the view.
+                                            let n: usize = this
+                                                .flow
+                                                .flow()
+                                                .snapshot()
+                                                .lead_name
+                                                .bytes()
+                                                .map(|b| b as usize)
+                                                .sum::<usize>()
+                                                + this.flow.flow().snapshot().skipped.len();
+                                            let shapes = ["bean", "round", "pear", "cloud", "drop"];
+                                            let palettes = ["green", "amber", "violet", "blue"];
                                             this.flow.set_look(
                                                 &store,
-                                                "bean",
-                                                &s.palette,
-                                                &s.eyes,
-                                                &s.accessory,
+                                                shapes[n % shapes.len()],
+                                                palettes[(n / shapes.len()) % palettes.len()],
+                                                "diamond",
+                                                "",
                                             );
                                         }
                                         cx.notify();
-                                    }),
-                                ))
-                                .child(Button::new("ob-shape-round").label("round").on_click(
-                                    cx.listener(|this, _, _, cx| {
-                                        if let Some(store) = open_store() {
-                                            let s = this.flow.flow().snapshot().clone();
-                                            this.flow.set_look(
-                                                &store,
-                                                "round",
-                                                &s.palette,
-                                                &s.eyes,
-                                                &s.accessory,
-                                            );
-                                        }
-                                        cx.notify();
-                                    }),
-                                ))
-                                .child(
-                                    Button::new("ob-surprise")
-                                        .label("Surprise me")
-                                        .secondary()
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            if let Some(store) = open_store() {
-                                                // Deterministic shuffle from the name so it is
-                                                // stable across restarts, bounced by the view.
-                                                let n: usize = this
-                                                    .flow
-                                                    .flow()
-                                                    .snapshot()
-                                                    .lead_name
-                                                    .bytes()
-                                                    .map(|b| b as usize)
-                                                    .sum::<usize>()
-                                                    + this.flow.flow().snapshot().skipped.len();
-                                                let shapes =
-                                                    ["bean", "round", "pear", "cloud", "drop"];
-                                                let palettes =
-                                                    ["green", "amber", "violet", "blue"];
-                                                this.flow.set_look(
-                                                    &store,
-                                                    shapes[n % shapes.len()],
-                                                    palettes[(n / shapes.len()) % palettes.len()],
-                                                    "diamond",
-                                                    "",
-                                                );
-                                            }
-                                            cx.notify();
-                                        })),
-                                ),
-                        );
+                                    })),
+                            ),
+                    );
                 }
                 Step::Brains => {
                     let found = format!(
@@ -828,7 +822,9 @@ pub fn launch() {
                                 .child(
                                     Button::new("ob-key-test")
                                         .label("Save key & test")
-                                        .on_click(cx.listener(|this, _, _, cx| this.do_test_key(cx))),
+                                        .on_click(
+                                            cx.listener(|this, _, _, cx| this.do_test_key(cx)),
+                                        ),
                                 )
                                 .child(
                                     Button::new("ob-backend-keyless")
@@ -843,13 +839,15 @@ pub fn launch() {
                                 ),
                         );
                     if !can_continue {
-                        col = col.child(div().child(
-                            self.flow
-                                .flow()
-                                .blocked_hint()
-                                .unwrap_or("Still looking…")
-                                .to_string(),
-                        ));
+                        col = col.child(
+                            div().child(
+                                self.flow
+                                    .flow()
+                                    .blocked_hint()
+                                    .unwrap_or("Still looking…")
+                                    .to_string(),
+                            ),
+                        );
                     }
                 }
                 Step::Research => {
@@ -888,17 +886,14 @@ pub fn launch() {
                         let id = t.id.clone();
                         let label = t.name.clone();
                         let btn_id = format!("ob-template-{}", t.id);
-                        row = row.child(
-                            Button::new(btn_id)
-                                .label(label)
-                                .secondary()
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    if let Some(store) = open_store() {
-                                        this.flow.set_template(&store, &id);
-                                    }
-                                    cx.notify();
-                                })),
-                        );
+                        row = row.child(Button::new(btn_id).label(label).secondary().on_click(
+                            cx.listener(move |this, _, _, cx| {
+                                if let Some(store) = open_store() {
+                                    this.flow.set_template(&store, &id);
+                                }
+                                cx.notify();
+                            }),
+                        ));
                     }
                     col = col
                         .child(div().child(format!("Team: {}", self.flow.flow().template_name())))
@@ -917,9 +912,12 @@ pub fn launch() {
                                 })),
                         );
                     }
-                    col = col.child(Input::new(&self.goal_input)).child(chips).child(
-                        div().child("Keep Synapse in the menu bar: toggle after the first run starts."),
-                    );
+                    col =
+                        col.child(Input::new(&self.goal_input))
+                            .child(chips)
+                            .child(div().child(
+                                "Keep Synapse in the menu bar: toggle after the first run starts.",
+                            ));
                 }
             }
             if !self.status.is_empty() {
@@ -949,8 +947,9 @@ pub fn launch() {
                                 this.do_continue(window, cx);
                             }))
                     } else {
-                        Button::new("ob-continue-disabled").label(continue_label).on_click(
-                            cx.listener(|this, _, _, cx| {
+                        Button::new("ob-continue-disabled")
+                            .label(continue_label)
+                            .on_click(cx.listener(|this, _, _, cx| {
                                 this.status = this
                                     .flow
                                     .flow()
@@ -958,8 +957,7 @@ pub fn launch() {
                                     .unwrap_or("Not yet — see above.")
                                     .to_string();
                                 cx.notify();
-                            }),
-                        )
+                            }))
                     }),
             )
         }

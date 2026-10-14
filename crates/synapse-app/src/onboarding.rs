@@ -943,7 +943,7 @@ mod onboarding_tests {
     }
 
     fn drive_to_goal(store: &synapse_store::Store) -> FirstLaunch {
-        let mut w = FirstLaunch::open(&store);
+        let mut w = FirstLaunch::open(store);
         w.set_lead_name(store, "Dottie");
         w.set_look(store, "bean", "green", "diamond", "");
         w.set_brains_backend(store, "claude");
@@ -1001,7 +1001,7 @@ mod onboarding_tests {
         let store = mem_store();
         let mut w = drive_to_goal(&store);
         // Detection never blocks stepping: probe runs off-thread.
-        w.start_background_detection(|| DetectionSnapshot::default());
+        w.start_background_detection(DetectionSnapshot::default);
         assert!(w.can_continue() || w.flow().step() != Step::Brains);
         let done = w.complete(&store).expect("complete");
         assert!(!done.project_id.is_empty());

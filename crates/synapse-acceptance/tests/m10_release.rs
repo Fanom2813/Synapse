@@ -116,9 +116,11 @@ fn m10_onboarding_progress_resume_and_first_project() {
 
 fn store_with_secret_report() -> (ArtifactStore, String) {
     let mut store = ArtifactStore::new();
-    let mut draft = ReportDraft::default();
-    draft.summary = format!("Findings mention {} inline.", fixtures::OPENAI.1);
-    draft.findings = vec![("Costs".into(), "Fees rose `fast`.".into())];
+    let draft = ReportDraft {
+        summary: format!("Findings mention {} inline.", fixtures::OPENAI.1),
+        findings: vec![("Costs".into(), "Fees rose `fast`.".into())],
+        ..Default::default()
+    };
     let body = render_synthesis_report("Market study", &draft);
     let a = store
         .create(

@@ -5,6 +5,7 @@ pub mod agents;
 pub mod artifacts;
 pub mod attachments;
 pub mod bus;
+pub mod learned_skills;
 pub mod memory_files;
 pub mod memory_recall;
 pub mod memory_write;
@@ -31,6 +32,11 @@ pub use attachments::{
 pub use bus::{
     AttachmentRef, BusError, Envelope, Event, Kind, Participant, Priority, Recipients, SourceRef,
     TeamBus, Usage, BROADCAST_CAPACITY, INBOX_CAPACITY,
+};
+pub use learned_skills::{
+    propose_learned_skill, render_skill_markdown, skill_creator_input, skill_folder_files,
+    LearnedSkillError, LearnedSkillProposal, LearnedSkillQueue, LearnedSkillStatus,
+    SkillCreatorDraft, SKILL_CREATOR_NAME,
 };
 pub use memory_files::{
     agent_memory_path, diff_memory_files, digest_memory_path, memory_mirror_needs_import,

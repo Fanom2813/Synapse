@@ -9,5 +9,6 @@ synapse-core = { path = "../synapse-core" }
 synapse-store = { path = "../synapse-store" }
 synapse-app = { path = "../synapse-app" }
 synapse-llm = { path = "../synapse-llm" }
+synapse-personas = { path = "../synapse-personas" }
 tokio = { workspace = true }
 serde_json = { workspace = true }

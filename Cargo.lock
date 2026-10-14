@@ -6702,6 +6702,7 @@ dependencies = [
  "synapse-app",
  "synapse-core",
  "synapse-llm",
+ "synapse-personas",
  "synapse-store",
  "tokio",
 ]

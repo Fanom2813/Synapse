@@ -44,13 +44,24 @@ pub fn builtin_templates() -> Vec<TeamTemplate> {
         TeamTemplate {
             id: "research-squad".into(),
             name: "Research squad".into(),
-            description: "Lead plus researchers, a fact-checker, a critic and a writer."
-                .into(),
+            description: "Lead plus researchers, a fact-checker, a critic and a writer.".into(),
             roles: vec![
-                role("Lead", "Plan the research, assign questions, converge on findings."),
-                role("Researcher", "Search sources and report findings with citations."),
-                role("Researcher", "Search sources and report findings with citations."),
-                role("Researcher", "Search sources and report findings with citations."),
+                role(
+                    "Lead",
+                    "Plan the research, assign questions, converge on findings.",
+                ),
+                role(
+                    "Researcher",
+                    "Search sources and report findings with citations.",
+                ),
+                role(
+                    "Researcher",
+                    "Search sources and report findings with citations.",
+                ),
+                role(
+                    "Researcher",
+                    "Search sources and report findings with citations.",
+                ),
                 role(
                     "Fact-checker",
                     "Verify every claim against its cited source.",
@@ -67,10 +78,22 @@ pub fn builtin_templates() -> Vec<TeamTemplate> {
             name: "Product brainstorm".into(),
             description: "Lead plus diverse ideators and a critic to rank ideas.".into(),
             roles: vec![
-                role("Lead", "Elicit distinct perspectives, then converge and rank."),
-                role("Ideator", "Generate bold product ideas from your perspective."),
-                role("Ideator", "Generate bold product ideas from your perspective."),
-                role("Ideator", "Generate bold product ideas from your perspective."),
+                role(
+                    "Lead",
+                    "Elicit distinct perspectives, then converge and rank.",
+                ),
+                role(
+                    "Ideator",
+                    "Generate bold product ideas from your perspective.",
+                ),
+                role(
+                    "Ideator",
+                    "Generate bold product ideas from your perspective.",
+                ),
+                role(
+                    "Ideator",
+                    "Generate bold product ideas from your perspective.",
+                ),
                 role(
                     "Critic",
                     "Attack weak ideas with reasons; keep what survives.",
@@ -81,12 +104,20 @@ pub fn builtin_templates() -> Vec<TeamTemplate> {
         TeamTemplate {
             id: "investment-analysis".into(),
             name: "Investment analysis".into(),
-            description: "Lead plus analysts covering risk, economics and first principles."
-                .into(),
+            description: "Lead plus analysts covering risk, economics and first principles.".into(),
             roles: vec![
-                role("Lead", "Plan the analysis and write the final recommendation."),
-                role("Risk analyst", "Surface risks, downsides and falsifiability checks."),
-                role("Economics analyst", "Model costs, incentives and market forces."),
+                role(
+                    "Lead",
+                    "Plan the analysis and write the final recommendation.",
+                ),
+                role(
+                    "Risk analyst",
+                    "Surface risks, downsides and falsifiability checks.",
+                ),
+                role(
+                    "Economics analyst",
+                    "Model costs, incentives and market forces.",
+                ),
                 role(
                     "First-principles analyst",
                     "Break the thesis into fundamentals and test each claim.",
@@ -95,7 +126,10 @@ pub fn builtin_templates() -> Vec<TeamTemplate> {
                     "Devil's advocate",
                     "Argue the short case with reasons and evidence.",
                 ),
-                role("Writer", "Synthesize the analysis, dissent and open questions."),
+                role(
+                    "Writer",
+                    "Synthesize the analysis, dissent and open questions.",
+                ),
             ],
         },
         TeamTemplate {
@@ -313,8 +347,7 @@ impl ProjectStore {
             lead_agent_id: v.lead_agent_id,
             member_ids: v.member_ids,
         };
-        self.projects
-            .insert(project.id.clone(), project.clone());
+        self.projects.insert(project.id.clone(), project.clone());
         Ok(project)
     }
 
@@ -515,7 +548,10 @@ mod projects_tests {
         let err = store.create(draft, &agents).expect_err("must not save");
         let text = err.explain();
         for want in ["name", "goal", "folder", "lead", "team"] {
-            assert!(text.contains(want), "explanation must mention {want}: {text}");
+            assert!(
+                text.contains(want),
+                "explanation must mention {want}: {text}"
+            );
         }
         assert!(store.is_empty());
     }
@@ -532,7 +568,9 @@ mod projects_tests {
             lead_agent_id: "agent_999".into(),
             member_ids: vec!["agent_999".into(), "  ".into()],
         };
-        let err = store.create(draft, &agents).expect_err("bad team must not save");
+        let err = store
+            .create(draft, &agents)
+            .expect_err("bad team must not save");
         let text = err.explain();
         assert!(text.contains("template"), "got: {text}");
         assert!(text.contains("agent_999"), "got: {text}");
@@ -546,7 +584,9 @@ mod projects_tests {
             lead_agent_id: ids[0].clone(),
             member_ids: Vec::new(),
         };
-        let err = store.create(draft, &agents).expect_err("empty team must not save");
+        let err = store
+            .create(draft, &agents)
+            .expect_err("empty team must not save");
         assert!(err.explain().contains("team"), "got: {}", err.explain());
     }
 
@@ -554,7 +594,12 @@ mod projects_tests {
     fn projects_builtin_templates_cover_expected_teams() {
         let templates = builtin_templates();
         let ids: Vec<&str> = templates.iter().map(|t| t.id.as_str()).collect();
-        for want in ["research-squad", "product-brainstorm", "investment-analysis", "custom"] {
+        for want in [
+            "research-squad",
+            "product-brainstorm",
+            "investment-analysis",
+            "custom",
+        ] {
             assert!(ids.contains(&want), "missing template {want}: {ids:?}");
         }
         let squad = builtin_template("research-squad").expect("squad exists");

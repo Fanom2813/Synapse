@@ -8,6 +8,7 @@ pub mod artifact_panel;
 pub mod attachments_ui;
 pub mod avatar;
 pub mod avatar_packs;
+pub mod background_settings;
 pub mod chat_view;
 pub mod cli_agents_ui;
 pub mod connectors;

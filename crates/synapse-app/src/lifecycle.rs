@@ -252,7 +252,10 @@ pub fn tray_menu_labels(snapshot: &TraySnapshot) -> Vec<String> {
         }
     }
     if snapshot.pending_approvals > 0 {
-        items.push(format!("Pending approvals ({})", snapshot.pending_approvals));
+        items.push(format!(
+            "Pending approvals ({})",
+            snapshot.pending_approvals
+        ));
     } else {
         items.push("Pending approvals".to_string());
     }
@@ -505,9 +508,15 @@ mod tests {
         };
         let items = tray_menu_labels(&snapshot);
         assert!(items.contains(&"Open Synapse".to_string()));
-        assert!(items.iter().any(|l| l.contains("Market study") && l.contains("Searching")));
-        assert!(items.iter().any(|l| l.contains("Uganda fintech") && l.contains("Reading")));
-        assert!(items.iter().any(|l| l.contains("Pending approvals") && l.contains('2')));
+        assert!(items
+            .iter()
+            .any(|l| l.contains("Market study") && l.contains("Searching")));
+        assert!(items
+            .iter()
+            .any(|l| l.contains("Uganda fintech") && l.contains("Reading")));
+        assert!(items
+            .iter()
+            .any(|l| l.contains("Pending approvals") && l.contains('2')));
         assert!(items.contains(&"Pause All".to_string()));
         assert!(items.contains(&"Quick Ask".to_string()));
         assert!(items.contains(&"Quit".to_string()));
@@ -576,10 +585,7 @@ mod tests {
 
     #[test]
     fn tray_menu_icon_reflects_idle_working_and_needs_you() {
-        assert_eq!(
-            tray_icon_state(&TraySnapshot::idle()),
-            TrayIconState::Idle
-        );
+        assert_eq!(tray_icon_state(&TraySnapshot::idle()), TrayIconState::Idle);
         let working = TraySnapshot {
             runs: vec![TrayRun::new("r1", "Market study", "Searching")],
             pending_approvals: 0,

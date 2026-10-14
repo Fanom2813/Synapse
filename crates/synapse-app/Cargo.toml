@@ -36,6 +36,7 @@ secrecy = { workspace = true }
 gpui-kit = { workspace = true }
 interprocess = { workspace = true }
 gpui-tray = { workspace = true }
+auto-launch = { workspace = true }
 sysinfo = { workspace = true }
 memory-stats = { workspace = true }
 

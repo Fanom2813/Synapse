@@ -29,7 +29,9 @@ pub struct QuickAskHotkey {
 
 impl QuickAskHotkey {
     pub fn default_combo() -> Self {
-        DEFAULT_QUICK_ASK_HOTKEY.parse().expect("default hotkey parses")
+        DEFAULT_QUICK_ASK_HOTKEY
+            .parse()
+            .expect("default hotkey parses")
     }
 
     /// Canonical display string, e.g. `"Ctrl+Shift+Space"`.
@@ -111,9 +113,7 @@ fn capitalise_key(key: &str) -> String {
     let mut chars = key.chars();
     match chars.next() {
         None => String::new(),
-        Some(first) => {
-            first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase()
-        }
+        Some(first) => first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase(),
     }
 }
 
@@ -216,9 +216,14 @@ impl QuickAskSettings {
     }
 
     pub fn save(&self, store: &synapse_store::Store) -> Result<(), String> {
-        self.hotkey.parse::<QuickAskHotkey>().map_err(|e| e.to_string())?;
+        self.hotkey
+            .parse::<QuickAskHotkey>()
+            .map_err(|e| e.to_string())?;
         store
-            .setting_set(QUICK_ASK_HOTKEY_KEY, &serde_json::to_string(&self.hotkey).unwrap_or_default())
+            .setting_set(
+                QUICK_ASK_HOTKEY_KEY,
+                &serde_json::to_string(&self.hotkey).unwrap_or_default(),
+            )
             .map_err(|e| e.to_string())?;
         store
             .setting_set(
@@ -429,10 +434,7 @@ mod quick_ask_tests {
 
     #[test]
     fn quick_ask_hotkey_backend_prefers_portal_on_wayland() {
-        assert_eq!(
-            hotkey_backend_for(false, false),
-            HotkeyBackend::Native
-        );
+        assert_eq!(hotkey_backend_for(false, false), HotkeyBackend::Native);
         assert_eq!(hotkey_backend_for(true, true), HotkeyBackend::Portal);
         assert_eq!(
             hotkey_backend_for(true, false),
@@ -513,7 +515,9 @@ mod quick_ask_tests {
             last_project_id: String::new(),
         };
         assert!(bad.save(&store).is_err());
-        store.setting_set(QUICK_ASK_HOTKEY_KEY, "\"Space\"").unwrap();
+        store
+            .setting_set(QUICK_ASK_HOTKEY_KEY, "\"Space\"")
+            .unwrap();
         assert_eq!(
             QuickAskSettings::load(&store).hotkey,
             DEFAULT_QUICK_ASK_HOTKEY

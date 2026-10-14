@@ -184,7 +184,16 @@ pub fn launch() {
     use gpui_kit::component::button::{Button, ButtonVariants};
     use gpui_kit::*;
 
-    actions!(synapse_tray, [TrayOpen, TrayQuickAsk, TrayPauseAll, TrayApprovals, TrayQuit]);
+    actions!(
+        synapse_tray,
+        [
+            TrayOpen,
+            TrayQuickAsk,
+            TrayPauseAll,
+            TrayApprovals,
+            TrayQuit
+        ]
+    );
 
     struct ShellView {
         shell: AppShell,

@@ -3,3 +3,15 @@ name = "synapse-llm"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+reqwest = { workspace = true }
+rusqlite = { workspace = true }
+flate2 = "1"
+tokio = { workspace = true }
+
+[dev-dependencies]
+wiremock = { workspace = true }

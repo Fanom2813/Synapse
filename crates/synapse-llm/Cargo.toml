@@ -12,6 +12,8 @@ reqwest = { workspace = true }
 rusqlite = { workspace = true }
 flate2 = "1"
 tokio = { workspace = true }
+genai = { workspace = true }
+futures = { workspace = true }
 
 [dev-dependencies]
 wiremock = { workspace = true }

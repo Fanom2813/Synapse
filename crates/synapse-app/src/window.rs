@@ -73,10 +73,28 @@ pub fn open_persisted_shell() -> AppShell {
 
 /// Launch the native window. Called from the `synapse` binary; blocks on
 /// the GPUI event loop until explicit quit (tray Quit / Cmd-Ctrl-Q).
+///
+/// Wiring (ARCHITECTURE.md §5, [`crate::lifecycle`]):
+/// - Single instance: a second launch sends [`crate::lifecycle::FOCUS_MESSAGE`]
+///   to the primary over the local socket and exits; the primary focuses or
+///   rebuilds its window.
+/// - `QuitMode::Explicit`: closing the last window never quits; the close is
+///   recorded as hidden in the [`crate::lifecycle::WindowLifecycle`] and a
+///   background task marks it destroyed after
+///   [`crate::lifecycle::DESTROY_HIDDEN_AFTER_SECS`].
+/// - Tray (gpui-tray) menu Open/Quit plus matching dock menu entries drive
+///   [`crate::lifecycle::apply_tray_command`].
 #[cfg(not(test))]
 pub fn launch() {
+    use crate::lifecycle::{
+        apply_tray_command, bind_single_instance, handle_second_launch, notify_existing_instance,
+        read_instance_message, tray_menu_items, OpenEffect, TrayCommand, WindowLifecycle,
+        DESTROY_HIDDEN_AFTER_SECS,
+    };
     use gpui_kit::component::button::{Button, ButtonVariants};
     use gpui_kit::*;
+
+    actions!(synapse_tray, [TrayOpen, TrayQuit]);
 
     struct ShellView {
         shell: AppShell,
@@ -161,15 +179,191 @@ pub fn launch() {
         }
     }
 
-    let mut shell = Some(open_persisted_shell());
-    application().run(move |cx| {
-        init(cx);
-        open_window(WindowOptions::default(), cx, |_, cx| {
-            let s = shell.take().expect("window opened once");
-            cx.new(|_| ShellView { shell: s })
+    struct LifecycleHost {
+        lifecycle: WindowLifecycle,
+        window: Option<AnyWindowHandle>,
+    }
+
+    impl Global for LifecycleHost {}
+
+    struct TrayHandle(gpui_tray::Tray);
+
+    impl Global for TrayHandle {}
+
+    fn open_main_window(cx: &mut App, shell: AppShell) -> AnyWindowHandle {
+        let (handle, _) = open_window(WindowOptions::default(), cx, |_, cx| {
+            cx.new(|_| ShellView { shell })
         })
         .expect("failed to open Synapse window");
-    });
+        handle
+    }
+
+    /// Focus the live window, or (re)build it when it was hidden/destroyed.
+    /// Reports the [`OpenEffect`] so tray and IPC paths share one behaviour.
+    fn show_or_rebuild(cx: &mut App) -> OpenEffect {
+        let effect = cx.global_mut::<LifecycleHost>().lifecycle.open_window();
+        let live = cx
+            .global::<LifecycleHost>()
+            .window
+            .and_then(|h| h.update(cx, |_, window, _| window.activate_window()).ok())
+            .is_some();
+        if live {
+            cx.activate(true);
+            return OpenEffect::Focus;
+        }
+        // No live native window (closed, or never opened): rebuild from store.
+        let shell = open_persisted_shell();
+        let handle = open_main_window(cx, shell);
+        cx.global_mut::<LifecycleHost>().window = Some(handle);
+        cx.activate(true);
+        effect
+    }
+
+    fn on_tray_open(_: &TrayOpen, cx: &mut App) {
+        // Keep the state machine as the source of truth for the effect.
+        let _ = apply_tray_command(
+            &mut cx.global_mut::<LifecycleHost>().lifecycle,
+            TrayCommand::Open,
+        );
+        show_or_rebuild(cx);
+    }
+
+    fn on_tray_quit(_: &TrayQuit, cx: &mut App) {
+        let _ = apply_tray_command(
+            &mut cx.global_mut::<LifecycleHost>().lifecycle,
+            TrayCommand::Quit,
+        );
+        let tray = cx.try_global::<TrayHandle>().map(|t| t.0.clone());
+        if let Some(tray) = tray {
+            let _ = tray.close(cx);
+        }
+        cx.quit();
+    }
+
+    fn build_tray_menu(_cx: &mut App) -> Vec<MenuItem> {
+        tray_menu_items()
+            .into_iter()
+            .map(|label| match label {
+                "Open" => MenuItem::action("Open", TrayOpen),
+                _ => MenuItem::action("Quit", TrayQuit),
+            })
+            .collect()
+    }
+
+    fn tray_icon() -> gpui_tray::Result<gpui_tray::Icon> {
+        const SIZE: u32 = 32;
+        let mut rgba = vec![0_u8; (SIZE * SIZE * 4) as usize];
+        for y in 0..SIZE {
+            for x in 0..SIZE {
+                let offset = ((y * SIZE + x) * 4) as usize;
+                let dx = x as i32 - 16;
+                let dy = y as i32 - 16;
+                if dx * dx + dy * dy <= 14 * 14 {
+                    rgba[offset..offset + 4].copy_from_slice(&[45, 105, 220, 255]);
+                }
+            }
+        }
+        gpui_tray::Icon::from_rgba(rgba, SIZE, SIZE)
+    }
+
+    // --- single instance: second launch focuses the primary and exits ---
+    let dir = crate::app_dirs::data_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    if notify_existing_instance(&dir) {
+        return;
+    }
+    let listener = match bind_single_instance(&dir) {
+        Ok(listener) => Some(listener),
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+            // Lost the race: a primary is live, ask it to focus and exit.
+            let _ = notify_existing_instance(&dir);
+            return;
+        }
+        Err(e) => {
+            eprintln!("single-instance socket unavailable ({e}); continuing without it");
+            None
+        }
+    };
+    let (focus_tx, mut focus_rx) = futures::channel::mpsc::unbounded::<String>();
+    if let Some(listener) = listener {
+        std::thread::Builder::new()
+            .name("synapse-instance-ipc".to_string())
+            .spawn(move || {
+                use interprocess::local_socket::traits::ListenerExt as _;
+                for mut conn in listener.incoming().flatten() {
+                    let msg = read_instance_message(&mut conn);
+                    if focus_tx.unbounded_send(msg).is_err() {
+                        break;
+                    }
+                }
+            })
+            .expect("failed to spawn single-instance IPC thread");
+    }
+
+    application()
+        .with_quit_mode(QuitMode::Explicit)
+        .run(move |cx| {
+            use futures::StreamExt as _;
+            init(cx);
+            cx.set_quit_mode(QuitMode::Explicit);
+            cx.set_global(LifecycleHost {
+                lifecycle: WindowLifecycle::new_visible(),
+                window: None,
+            });
+            cx.on_action(on_tray_open);
+            cx.on_action(on_tray_quit);
+            cx.set_dock_menu(vec![
+                MenuItem::action("Open", TrayOpen),
+                MenuItem::action("Quit", TrayQuit),
+            ]);
+            match gpui_tray::Tray::builder()
+                .icon(tray_icon().expect("tray icon"))
+                .title("Synapse")
+                .tooltip("Synapse")
+                .menu(build_tray_menu)
+                .build(cx)
+            {
+                Ok(tray) => cx.set_global(TrayHandle(tray)),
+                Err(e) => eprintln!("tray unavailable ({e}); Open/Quit remain in the dock menu"),
+            }
+            let shell = open_persisted_shell();
+            let handle = open_main_window(cx, shell);
+            cx.global_mut::<LifecycleHost>().window = Some(handle);
+            // Close hides: Explicit quit mode keeps the app alive; record the
+            // hidden state and destroy it after the threshold (frees GPU).
+            // GPUI gives no close-interception hook, so a closed native window
+            // is rebuilt from the store on the next open (tray/dock/IPC).
+            // (`Subscription` deactivates on drop; the app owns this observer
+            // for its whole lifetime, so it is intentionally forgotten.)
+            std::mem::forget(cx.on_window_closed(|cx: &mut App, _id| {
+                let host = cx.global_mut::<LifecycleHost>();
+                host.lifecycle.close_window();
+                host.window = None;
+                cx.spawn(async move |cx| {
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_secs(DESTROY_HIDDEN_AFTER_SECS))
+                        .await;
+                    cx.update(|cx| {
+                        let host = cx.global_mut::<LifecycleHost>();
+                        host.lifecycle.advance(DESTROY_HIDDEN_AFTER_SECS);
+                    });
+                })
+                .detach();
+            }));
+            // Second launches arrive here: focus the running instance.
+            cx.spawn(async move |cx| {
+                while let Some(msg) = focus_rx.next().await {
+                    cx.update(|cx| {
+                        let (_, _) = handle_second_launch(
+                            &mut cx.global_mut::<LifecycleHost>().lifecycle,
+                            msg.as_str(),
+                        );
+                        show_or_rebuild(cx);
+                    });
+                }
+            })
+            .detach();
+        });
 }
 
 /// Run-pill line for the title bar (mode + phase, or "Start a run").

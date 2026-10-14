@@ -57,7 +57,7 @@ htmd = { version = "=0.5.0" }
 gray_matter = { version = "=0.3.0" }
 # UI shell (see docs/STACK.md). Pinned exactly; resolved once a crate opts in.
 gpui-kit = { version = "=0.7.3" }
-gpui-tray = { version = "0.1", features = ["gpui-kit", "menu-state"] }
+gpui-tray = { version = "0.1", default-features = false, features = ["gpui-kit", "menu-state"] }
 global-hotkey = "0.8"
 notify-rust = "4"
 auto-launch = "0.6"

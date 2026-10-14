@@ -29,3 +29,5 @@ thiserror.workspace = true
 synapse-core = { path = "../synapse-core" }
 synapse-store = { path = "../synapse-store" }
 gpui-kit = { workspace = true }
+interprocess = { workspace = true }
+gpui-tray = { workspace = true }

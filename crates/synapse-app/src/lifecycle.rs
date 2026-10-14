@@ -166,6 +166,82 @@ pub fn parse_tray_menu_item(label: &str) -> Option<TrayCommand> {
 /// Message a second instance sends to the running instance.
 pub const FOCUS_MESSAGE: &str = "focus";
 
+/// Local-socket name for single-instance IPC inside `dir`.
+/// File-path sockets work on every platform (Unix socket / Windows named pipe
+/// mapped from the path by `interprocess`).
+pub fn socket_name_for(
+    dir: &std::path::Path,
+) -> std::io::Result<interprocess::local_socket::Name<'static>> {
+    use interprocess::local_socket::{GenericFilePath, ToFsName as _};
+    instance_socket_path(dir).to_fs_name::<GenericFilePath>()
+}
+
+/// Try to become the primary instance by binding the single-instance socket.
+/// Returns the bound listener on success; an `AddrInUse` error means another
+/// instance already holds it (see [`decide_launch`]).
+pub fn bind_single_instance(
+    dir: &std::path::Path,
+) -> std::io::Result<interprocess::local_socket::Listener> {
+    use interprocess::local_socket::ListenerOptions;
+    let _ = std::fs::create_dir_all(dir);
+    // A stale socket file from a crashed run would block rebinding; a live
+    // primary is detected via connect below, so removing a dead file is safe:
+    // if a primary were live, binding still fails with AddrInUse.
+    let path = instance_socket_path(dir);
+    let name = socket_name_for(dir)?;
+    match ListenerOptions::new().name(name).create_sync() {
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => Err(e),
+        Err(e) => {
+            // Stale file left behind: drop it once and retry.
+            let _ = std::fs::remove_file(&path);
+            let name = socket_name_for(dir)?;
+            ListenerOptions::new()
+                .name(name)
+                .create_sync()
+                .map_err(|e2| {
+                    std::io::Error::new(
+                        e2.kind(),
+                        format!("single-instance bind failed: {e} then {e2}"),
+                    )
+                })
+        }
+        ok => ok,
+    }
+}
+
+/// Tell the running instance to focus its window. Returns true when a
+/// primary was reached and acknowledged the [`FOCUS_MESSAGE`].
+pub fn notify_existing_instance(dir: &std::path::Path) -> bool {
+    use interprocess::local_socket::traits::Stream as _;
+    use interprocess::local_socket::Stream;
+    use interprocess::local_socket::{GenericFilePath, ToFsName as _};
+    use std::io::Write as _;
+    let name = match instance_socket_path(dir).to_fs_name::<GenericFilePath>() {
+        Ok(name) => name.into_owned(),
+        Err(_) => return false,
+    };
+    let mut stream = match Stream::connect(name) {
+        Ok(stream) => stream,
+        Err(_) => return false,
+    };
+    stream.write_all(FOCUS_MESSAGE.as_bytes()).is_ok()
+}
+
+/// Read one focus message from an accepted single-instance connection.
+/// Returns the raw payload (may be empty for a bare connect probe).
+pub fn read_instance_message(stream: &mut interprocess::local_socket::Stream) -> String {
+    use interprocess::local_socket::traits::Stream as _;
+    use std::io::Read as _;
+    let mut buf = [0_u8; 256];
+    // A short deadline keeps a wedged second launch from stalling the loop.
+    let _ = stream.set_recv_timeout(Some(std::time::Duration::from_secs(2)));
+    match stream.read(&mut buf) {
+        Ok(0) => String::new(),
+        Ok(n) => String::from_utf8_lossy(&buf[..n]).into_owned(),
+        Err(_) => String::new(),
+    }
+}
+
 /// Local-socket file for single-instance IPC inside `dir`.
 pub fn instance_socket_path(dir: &std::path::Path) -> PathBuf {
     dir.join("synapse.sock")
@@ -272,6 +348,27 @@ mod tests {
             TrayEffect::Quit
         );
         assert!(TrayEffect::Quit.quits());
+    }
+
+    #[test]
+    fn lifecycle_single_instance_socket_notifies_primary() {
+        let dir =
+            std::env::temp_dir().join(format!("synapse-lifecycle-ipc-{}", std::process::id()));
+        let _ = std::fs::remove_file(instance_socket_path(&dir));
+        // No primary running: notify fails, this launch becomes primary.
+        assert!(!notify_existing_instance(&dir));
+        assert_eq!(decide_launch(false), LaunchOutcome::Primary);
+
+        let listener = bind_single_instance(&dir).expect("bind primary socket");
+        // A second launch reaches the primary over the socket and defers.
+        assert!(notify_existing_instance(&dir));
+        let held = bind_single_instance(&dir).expect_err("second bind is held");
+        assert_eq!(held.kind(), std::io::ErrorKind::AddrInUse);
+        assert_eq!(decide_launch(true), LaunchOutcome::FocusExisting);
+
+        drop(listener);
+        let _ = std::fs::remove_file(instance_socket_path(&dir));
+        let _ = std::fs::remove_dir(&dir);
     }
 
     #[test]

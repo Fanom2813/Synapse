@@ -45,6 +45,7 @@ pub fn worker_threads() -> usize {
 pub struct BridgeTask<T> {
     handle: Option<JoinHandle<T>>,
     token: CancellationToken,
+    cancelled: bool,
 }
 
 impl<T> BridgeTask<T> {
@@ -52,6 +53,7 @@ impl<T> BridgeTask<T> {
         Self {
             handle: Some(handle),
             token,
+            cancelled: false,
         }
     }
 
@@ -61,8 +63,14 @@ impl<T> BridgeTask<T> {
         self.token.clone()
     }
 
-    /// Cancel the work without waiting for it.
+    /// Cancel the work without waiting for it. Awaiting or blocking on
+    /// the task afterwards always reports [`BridgeError::Cancelled`],
+    /// even if the future observed the token and returned normally
+    /// before the abort was processed. Cancelling the exposed token
+    /// directly (via [`BridgeTask::cancellation_token`]) does *not* set
+    /// this flag, so a token-aware future may still finish normally.
     pub fn cancel(&mut self) {
+        self.cancelled = true;
         self.token.cancel();
         if let Some(h) = &self.handle {
             h.abort();
@@ -79,7 +87,9 @@ impl<T> BridgeTask<T> {
     /// Never call this on the UI thread.
     pub fn block_on(mut self) -> Result<T, BridgeError> {
         let handle = self.handle.take().expect("task polled after completion");
+        let was_cancelled = self.cancelled;
         match global_runtime().block_on(handle) {
+            Ok(_) if was_cancelled => Err(BridgeError::Cancelled),
             Ok(v) => Ok(v),
             Err(e) if e.is_cancelled() => Err(BridgeError::Cancelled),
             Err(e) => Err(BridgeError::Join(e.to_string())),
@@ -100,8 +110,11 @@ impl<T> Future for BridgeTask<T> {
     type Output = Result<T, BridgeError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let handle = self.handle.as_mut().expect("polled after completion");
+        let this = self.as_mut().get_mut();
+        let was_cancelled = this.cancelled;
+        let handle = this.handle.as_mut().expect("polled after completion");
         match Pin::new(handle).poll(cx) {
+            Poll::Ready(_) if was_cancelled => Poll::Ready(Err(BridgeError::Cancelled)),
             Poll::Ready(Ok(v)) => Poll::Ready(Ok(v)),
             Poll::Ready(Err(e)) if e.is_cancelled() => Poll::Ready(Err(BridgeError::Cancelled)),
             Poll::Ready(Err(e)) => Poll::Ready(Err(BridgeError::Join(e.to_string()))),
@@ -256,6 +269,39 @@ mod tests {
         });
         assert!(done.is_ok());
         assert!(*token_holder.lock().unwrap());
+    }
+
+    #[test]
+    fn tokio_bridge_explicit_cancel_overrides_token_aware_return() {
+        // The future observes the token and returns normally; explicit
+        // cancel() must still report Cancelled.
+        let mut task = spawn_cancellable(|token| async move {
+            token.cancelled().await;
+            "finished-normally"
+        });
+        task.cancel();
+        assert_eq!(block_on(task), Err(BridgeError::Cancelled));
+
+        // Same guarantee through async await.
+        let mut task = spawn_cancellable(|token| async move {
+            token.cancelled().await;
+            "finished-normally"
+        });
+        task.cancel();
+        let out = block_on(task);
+        assert_eq!(out, Err(BridgeError::Cancelled));
+    }
+
+    #[test]
+    fn tokio_bridge_token_cancel_alone_finishes_normally() {
+        // Firing the exposed token without aborting lets the future
+        // finish normally.
+        let task = spawn_cancellable(|token| async move {
+            token.cancelled().await;
+            "finished-normally"
+        });
+        task.cancellation_token().cancel();
+        assert_eq!(block_on(task), Ok("finished-normally"));
     }
 
     #[test]

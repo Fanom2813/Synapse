@@ -563,6 +563,17 @@ impl TeamRoomState {
         self.members.retain(|m| m.id != id);
     }
 
+    /// Graph of members and Ask/Delegate/Challenge edges for the map panel.
+    pub fn conversation_map(&self) -> crate::conversation_map::ConversationMap {
+        let envelopes: Vec<Envelope> = self.messages.iter().map(|m| m.envelope.clone()).collect();
+        let members: Vec<(String, String)> = self
+            .members
+            .iter()
+            .map(|m| (m.id.clone(), m.role.clone()))
+            .collect();
+        crate::conversation_map::ConversationMap::build(&envelopes, &members)
+    }
+
     pub fn send_label(&self) -> &'static str {
         if self.run.status == RunStatus::Running {
             "Stop"

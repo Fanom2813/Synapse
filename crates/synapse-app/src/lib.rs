@@ -6,6 +6,7 @@ pub mod attachments_ui;
 pub mod avatar;
 pub mod avatar_packs;
 pub mod chat_view;
+pub mod conversation_map;
 pub mod empty;
 pub mod icons;
 pub mod layout;

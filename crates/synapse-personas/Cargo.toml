@@ -3,3 +3,9 @@ name = "synapse-personas"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+
+[dependencies]
+gray_matter = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

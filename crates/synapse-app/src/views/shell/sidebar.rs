@@ -10,7 +10,8 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::Sizable as _;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, TitleBar};
 use gpui_kit::{
-    div, px, AnyElement, Context, Div, IntoElement as _, ParentElement as _, Styled as _,
+    div, px, AnyElement, Context, Div, InteractiveElement as _, IntoElement as _,
+    ParentElement as _, Styled as _,
 };
 
 /// Sidebar width in px; the shell animates between this and a thin gap.
@@ -54,15 +55,42 @@ fn room_nav(view: &ShellView, cx: &mut Context<ShellView>) -> AnyElement {
     let mut projects = v_flex().gap_1();
     for (i, project) in view.shell.projects.iter().enumerate() {
         let id = project.id.clone();
+        let (delete_id, delete_name) = (project.id.clone(), project.name.clone());
         let selected = view.shell.open_project_id.as_deref() == Some(project.id.as_str());
-        projects = projects.child(nav_row(
-            ("project-row", i),
-            icons::EMPTY_PROJECTS,
-            project.name.clone(),
-            selected,
-            cx,
-            cx.listener(move |this, _, _, cx| this.show_project(&id, None, cx)),
-        ));
+        let group = format!("project-group-{i}");
+        // The delete button shows on hover (always on the open project).
+        let delete = Button::new(("project-delete", i))
+            .ghost()
+            .small()
+            .icon(icons::DELETE)
+            .tooltip("Delete project")
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.open_delete_project_dialog(delete_id.clone(), delete_name.clone(), window, cx)
+            }));
+        let delete = if selected {
+            div().child(delete)
+        } else {
+            div().invisible().group_hover(group.clone(), |s| s.visible()).child(delete)
+        };
+        projects = projects.child(
+            h_flex()
+                .group(group)
+                .items_center()
+                .gap_1()
+                .child(
+                    nav_row(
+                        ("project-row", i),
+                        icons::EMPTY_PROJECTS,
+                        project.name.clone(),
+                        selected,
+                        cx,
+                        cx.listener(move |this, _, _, cx| this.show_project(&id, None, cx)),
+                    )
+                    .flex_1()
+                    .min_w_0(),
+                )
+                .child(delete),
+        );
     }
     let new_project = cx.listener(|this, _, window, cx| this.open_new_project_dialog(window, cx));
     let list = match view.shell.sidebar_empty() {

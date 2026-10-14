@@ -23,6 +23,10 @@ version = "0.1.0"
 # Pre-1.0 crates that churn are pinned exactly (=x.y.z).
 # Entries here are resolved only once a crate uses `{ workspace = true }`,
 # so adding a pin costs nothing until it is actually adopted.
+# genai 0.2.4 with a streaming fix; see third_party/genai/PATCHES.md.
+[patch.crates-io]
+genai = { path = "third_party/genai" }
+
 [workspace.dependencies]
 anyhow = "1"
 flate2 = "1"

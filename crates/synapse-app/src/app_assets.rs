@@ -41,7 +41,7 @@ impl AssetSource for AppAssets {
         if path == crate::brand_mark::MARK_PATH {
             return Ok(Some(Cow::Borrowed(MARK_SVG)));
         }
-        if let Some(bytes) = crate::cli_logo::load(path) {
+        if let Some(bytes) = crate::cli_logo::load(path).or_else(|| crate::provider_logo::load(path)) {
             return Ok(Some(bytes));
         }
         match ExtraIcons.load(path)? {
@@ -57,6 +57,7 @@ impl AssetSource for AppAssets {
             out.push(crate::brand_mark::MARK_PATH.into());
         }
         out.extend(crate::cli_logo::list(path).map(SharedString::from));
+        out.extend(crate::provider_logo::list(path).map(SharedString::from));
         out.sort();
         out.dedup();
         Ok(out)

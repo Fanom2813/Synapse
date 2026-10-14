@@ -15,6 +15,7 @@ pub mod projects;
 pub mod redact;
 pub mod schedules;
 pub mod skills;
+pub mod team_dialogue;
 pub mod team_tools;
 pub mod worker;
 

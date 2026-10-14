@@ -93,6 +93,7 @@ impl ShellView {
             _ => Ok(()),
         });
         self.reload_models_page(cx);
+        self.refresh_chat_backend(cx);
     }
 }
 

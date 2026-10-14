@@ -43,7 +43,20 @@ pub(super) fn bar_row(
         .clone()
         .unwrap_or_else(|| "Synapse".into());
     let crumb = match screen {
-        AppScreen::Room => h_flex().child(crumb(project, false, cx)),
+        AppScreen::Room => {
+            let mut row = h_flex().gap_2().min_w_0().child(crumb(project, false, cx));
+            if !view.goal.is_empty() {
+                row = row.child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .typeset(TextRole::Caption, cx)
+                        .text_color(muted)
+                        .child(view.goal.clone()),
+                );
+            }
+            row
+        }
         AppScreen::Settings(section) => h_flex()
             .gap_2()
             .child(crumb("Settings".to_string(), true, cx))

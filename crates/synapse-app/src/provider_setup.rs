@@ -7,6 +7,22 @@ use crate::settings_providers::{ModelRole, ProvidersSettings};
 use anyhow::{anyhow, Context as _, Result};
 use synapse_llm::keys::SecretStore;
 
+fn key_marker(id: &str) -> String {
+    format!("provider.key_saved.{id}")
+}
+
+/// Whether a key is saved for the provider, answered from a marker in the
+/// settings instead of reading the keychain (every keychain read can raise
+/// the OS access prompt). Providers from before the marker count as saved.
+pub fn key_saved(store: &synapse_store::Store, id: &str) -> bool {
+    store.setting_get(&key_marker(id)).ok().flatten().map_or(true, |v| v == "1")
+}
+
+/// Record that a key was saved or removed (call next to the keychain write).
+pub fn mark_key_saved(store: &synapse_store::Store, id: &str, saved: bool) {
+    let _ = store.setting_set(&key_marker(id), if saved { "1" } else { "0" });
+}
+
 /// A provider that is switched on, as the onboarding list shows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AddedProvider {
@@ -65,6 +81,7 @@ pub fn add_provider(
             .set("provider", &id, &key)
             .map_err(|_| anyhow!("Could not save that key (keychain unavailable)."))?;
     }
+    mark_key_saved(store, &id, !key.is_empty());
     if is_custom {
         custom.save(store)?;
     }
@@ -102,6 +119,7 @@ pub fn remove_provider(
     }
     settings.save(store)?;
     let _ = secrets.delete("provider", id);
+    mark_key_saved(store, id, false);
     if id.starts_with("custom-") {
         let mut custom = CustomProviders::load(store);
         if custom.remove(id) {

@@ -16,7 +16,11 @@ use synapse_llm::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ChatRole {
     User,
+    /// The lead: the voice the user is talking to.
     Agent,
+    /// Another member of the team, speaking in the chat.
+    Teammate,
+    /// A short line about what the team is doing ("Lead asked Mira ...").
     System,
 }
 
@@ -28,6 +32,15 @@ pub struct ChatMessage {
     pub author: String,
     pub body: String,
     pub streaming: bool,
+    /// Teammates this message pinged, shown as small avatars beneath it.
+    pub pings: Vec<Ping>,
+}
+
+/// A request one teammate sent to another in a message.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Ping {
+    pub to: String,
+    pub body: String,
 }
 
 impl ChatMessage {
@@ -43,8 +56,22 @@ impl ChatMessage {
             author: author.into(),
             body: body.into(),
             streaming: false,
+            pings: Vec::new(),
         }
     }
+}
+
+/// The pings stored in a message's meta JSON.
+fn pings_from_meta(meta: &str) -> Vec<Ping> {
+    serde_json::from_str::<serde_json::Value>(meta)
+        .ok()
+        .and_then(|m| m["pings"].as_array().cloned())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|p| {
+            Some(Ping { to: p["to"].as_str()?.to_string(), body: p["body"].as_str()?.to_string() })
+        })
+        .collect()
 }
 
 /// A fenced code block parsed out of markdown (for code highlighting).
@@ -236,8 +263,89 @@ impl ChatState {
             author: "Agent".to_string(),
             body: String::new(),
             streaming: true,
+            pings: Vec::new(),
         });
         Some(agent)
+    }
+
+    /// Like [`Self::send`] for a team turn: push the user message only (each
+    /// speaker adds their own message as they start) and return the text plus
+    /// the conversation so far for the team to answer.
+    pub fn send_team(&mut self) -> Option<(String, Vec<TurnMessage>)> {
+        let body = self.draft.trim().to_string();
+        if body.is_empty() || self.running {
+            return None;
+        }
+        let id = self.alloc_id();
+        self.messages
+            .push(ChatMessage::new(id, ChatRole::User, "You", body.clone()));
+        self.draft.clear();
+        self.running = true;
+        self.clear_error();
+        Some((body, self.team_history()))
+    }
+
+    /// The conversation as a team member should read it: what the user and the
+    /// lead said, and what teammates reported (ask blocks and status lines
+    /// left out).
+    pub fn team_history(&self) -> Vec<TurnMessage> {
+        use synapse_core::team_dialogue::visible_text;
+        let mut out = Vec::new();
+        for m in &self.messages {
+            let text = match m.role {
+                ChatRole::User => m.body.clone(),
+                ChatRole::Agent | ChatRole::Teammate => visible_text(&m.body),
+                ChatRole::System => continue,
+            };
+            if text.trim().is_empty() {
+                continue;
+            }
+            out.push(match m.role {
+                ChatRole::User => TurnMessage::user(text),
+                ChatRole::Agent => TurnMessage::assistant(text),
+                _ => TurnMessage::user(format!("[{} replied earlier]\n{text}", m.author)),
+            });
+        }
+        out
+    }
+
+    /// A new message under `author`'s name that deltas will fill.
+    pub fn begin_speaker(&mut self, author: &str, role: ChatRole) -> usize {
+        let id = self.alloc_id();
+        self.messages.push(ChatMessage {
+            id,
+            role,
+            author: author.to_string(),
+            body: String::new(),
+            streaming: true,
+            pings: Vec::new(),
+        });
+        id
+    }
+
+    /// `from`'s latest message pinged `to` with `body`.
+    pub fn add_ping(&mut self, from: &str, to: &str, body: &str) {
+        let latest = self
+            .messages
+            .iter_mut()
+            .rev()
+            .find(|m| m.author == from && matches!(m.role, ChatRole::Agent | ChatRole::Teammate));
+        if let Some(m) = latest {
+            m.pings.push(Ping { to: to.to_string(), body: body.to_string() });
+        }
+    }
+
+    /// One message is complete (others may still be streaming).
+    pub fn end_message(&mut self, id: usize) {
+        self.flush_frame();
+        if let Some(m) = self.messages.iter_mut().find(|m| m.id == id) {
+            m.streaming = false;
+        }
+    }
+
+    /// Record the usage reported for a message.
+    pub fn set_usage(&mut self, id: usize, usage: Usage) {
+        self.usages.insert(id, usage);
     }
 
     /// Stop generation; the draft is kept (UI.md §5).
@@ -313,6 +421,10 @@ impl ChatState {
                 ChatRole::Agent => TurnMessage {
                     role: Role::Assistant,
                     text: m.body.clone(),
+                },
+                ChatRole::Teammate => TurnMessage {
+                    role: Role::User,
+                    text: format!("[{} replied earlier]\n{}", m.author, m.body),
                 },
                 ChatRole::System => TurnMessage {
                     role: Role::System,
@@ -436,25 +548,45 @@ impl ChatState {
         let mut saved = 0;
         for m in self.messages.iter().skip(self.saved) {
             let (from_id, kind) = match m.role {
-                ChatRole::User => ("user", "ask"),
-                ChatRole::Agent => ("agent", "answer"),
-                ChatRole::System => ("system", "note"),
+                ChatRole::User => ("user".to_string(), "ask"),
+                ChatRole::Agent => ("agent".to_string(), "answer"),
+                ChatRole::Teammate => (format!("agent:{}", m.author), "answer"),
+                ChatRole::System => ("system".to_string(), "note"),
             };
-            let meta = match self.costs.get(&m.id) {
-                Some(cost) => format!(r#"{{"cost": {}}}"#, cost.meta_json()),
-                None => "{}".to_string(),
+            let mut meta = serde_json::json!({});
+            if m.role == ChatRole::Agent {
+                meta["author"] = m.author.clone().into();
+            }
+            if !m.pings.is_empty() {
+                meta["pings"] = m.pings.iter().map(|p| serde_json::json!({"to": p.to, "body": p.body})).collect();
+            }
+            if let Some(cost) = self.costs.get(&m.id) {
+                if let Ok(cost) = serde_json::from_str::<serde_json::Value>(&cost.meta_json()) {
+                    meta["cost"] = cost;
+                }
+            }
+            let body = match m.role {
+                ChatRole::Agent | ChatRole::Teammate => {
+                    synapse_core::team_dialogue::visible_text(&m.body)
+                }
+                _ => m.body.clone(),
             };
+            // A teammate who passed said nothing; keep nothing.
+            if body.trim().is_empty() && m.role != ChatRole::User && m.pings.is_empty() {
+                saved += 1;
+                continue;
+            }
             store.insert_message(&synapse_store::NewMessage {
                 id: self.persisted_id(m.id),
                 conversation_id: self.conversation_id.clone(),
                 run_id: String::new(),
-                from_id: from_id.into(),
+                from_id,
                 to_json: "[]".into(),
                 kind: kind.into(),
                 reply_to: String::new(),
                 thread_id: String::new(),
-                body: m.body.clone(),
-                meta,
+                body,
+                meta: meta.to_string(),
             })?;
             saved += 1;
         }
@@ -479,23 +611,33 @@ impl ChatState {
         self.running = false;
         self.conversation_id = conversation_id.to_string();
         for row in &rows {
+            let pings = pings_from_meta(&row.meta);
+            if row.body.trim().is_empty() && pings.is_empty() {
+                continue;
+            }
             let role = match row.from_id.as_str() {
                 "user" => ChatRole::User,
                 "system" => ChatRole::System,
+                from if from.starts_with("agent:") => ChatRole::Teammate,
                 _ => ChatRole::Agent,
             };
+            let named = serde_json::from_str::<serde_json::Value>(&row.meta)
+                .ok()
+                .and_then(|m| m["author"].as_str().map(str::to_string));
             let author = match role {
-                ChatRole::User => "You",
-                ChatRole::Agent => "Agent",
-                ChatRole::System => "System",
+                ChatRole::User => "You".to_string(),
+                ChatRole::Agent => named.unwrap_or_else(|| "Agent".to_string()),
+                ChatRole::Teammate => row.from_id.trim_start_matches("agent:").to_string(),
+                ChatRole::System => "System".to_string(),
             };
             let id = self.alloc_id();
             self.messages.push(ChatMessage {
                 id,
                 role,
-                author: author.to_string(),
+                author,
                 body: row.body.clone(),
                 streaming: false,
+                pings,
             });
             if role == ChatRole::Agent {
                 if let Some(cost) =
@@ -516,6 +658,16 @@ impl ChatState {
         }
         self.saved = self.messages.len();
         Ok(self.conversation_cost())
+    }
+
+    /// A team turn failed: stop, and show what to do about it.
+    pub fn fail_team_turn(&mut self, err: &LlmError) {
+        self.flush_frame();
+        self.running = false;
+        for m in &mut self.messages {
+            m.streaming = false;
+        }
+        self.last_error = Some(err.user_message());
     }
 
     /// Record a provider failure on the agent placeholder and surface the
@@ -572,9 +724,26 @@ use gpui_kit::component::message_scroller::{MessageScroller, MessageScrollerStat
 use gpui_kit::component::text::TextView;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, Disableable as _};
 use gpui_kit::{
-    div, px, App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render,
-    Styled as _, Subscription, Window,
+    div, px, App, AppContext as _, Context, Entity, EventEmitter, IntoElement, ParentElement as _,
+    Render, Styled as _, Subscription, Window,
 };
+
+/// Run one turn on the tokio runtime: the provider's HTTP client needs it,
+/// and GPUI's own executor has none.
+async fn run_turn<B: ModelBackend + 'static>(
+    backend: std::sync::Arc<B>,
+    req: TurnRequest,
+) -> Result<Vec<AgentEvent>, LlmError> {
+    crate::runtime::spawn(async move { backend.turn_stream(req).await })
+        .await
+        .map_err(|e| LlmError::Stream(e.to_string()))?
+}
+
+/// A model wrote the goal of this project from its first prompt.
+pub struct GoalWritten {
+    pub project_id: String,
+    pub goal: String,
+}
 
 /// What the view needs to price and persist a finished turn. All fields are
 /// optional so the chat still works (without costs/persistence) when the
@@ -607,8 +776,17 @@ pub struct ChatView<B> {
     backend: std::sync::Arc<B>,
     model: String,
     persist: ChatPersist,
+    /// Project still without a goal: the next prompt is summarised into one.
+    goal_for: Option<String>,
+    /// System prompt every turn starts with (project, goal, team).
+    system: Option<String>,
+    /// The open project's team: when set, messages go to the lead (or the
+    /// member the user @mentions) and teammates answer in the chat.
+    team: Option<std::sync::Arc<crate::team_run::TeamEnv<B>>>,
     _composer_sub: Subscription,
 }
+
+impl<B> EventEmitter<GoalWritten> for ChatView<B> where B: ModelBackend + 'static {}
 
 impl<B> ChatView<B>
 where
@@ -635,8 +813,33 @@ where
             backend,
             model: model.into(),
             persist: ChatPersist::default(),
+            goal_for: None,
+            system: None,
+            team: None,
             _composer_sub: composer_sub,
         }
+    }
+
+    /// Switch to a freshly built backend (key, model or provider changed).
+    pub fn reconfigure(&mut self, backend: std::sync::Arc<B>, model: String, persist: ChatPersist) {
+        self.backend = backend;
+        self.model = model;
+        self.persist = persist;
+    }
+
+    /// The team that answers (`None`: a plain single-model chat).
+    pub fn set_team(&mut self, team: Option<std::sync::Arc<crate::team_run::TeamEnv<B>>>) {
+        self.team = team;
+    }
+
+    /// The system prompt for the next turns (`None`: send none).
+    pub fn set_system(&mut self, system: Option<String>) {
+        self.system = system;
+    }
+
+    /// Summarise the next prompt into this project's goal (`None`: stop).
+    pub fn write_goal_for(&mut self, project_id: Option<String>) {
+        self.goal_for = project_id;
     }
 
     pub fn with_persist(mut self, persist: ChatPersist) -> Self {
@@ -695,6 +898,120 @@ where
         }
     }
 
+    /// Have a model write the project's goal from `text` when it has none.
+    fn start_goal_summary(&mut self, text: &str, cx: &mut Context<Self>) {
+        let Some(project_id) = self.goal_for.take() else {
+            return;
+        };
+        let (backend, store) = (self.backend.clone(), self.persist.store.clone());
+        let req = crate::project_goal::request(&self.model, text);
+        cx.spawn(async move |this, cx| {
+            let Some(goal) = run_turn(backend, req)
+                .await
+                .ok()
+                .and_then(crate::project_goal::from_events)
+            else {
+                return;
+            };
+            let saved = store.is_some_and(|s| s.set_project_goal(&project_id, &goal).is_ok());
+            if saved {
+                _ = this.update(cx, |_, cx| cx.emit(GoalWritten { project_id, goal }));
+            }
+        })
+        .detach();
+    }
+
+    /// Send the user's message to the team: the lead (or the @mentioned
+    /// member) answers, asks teammates when it helps, and every speaker
+    /// streams into the chat under their own name.
+    fn send_to_team(
+        &mut self,
+        team: std::sync::Arc<crate::team_run::TeamEnv<B>>,
+        text: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        use crate::team_run::{run_team_turn, TeamEvent};
+        let Some((body, history)) = self.state.send_team() else {
+            return;
+        };
+        self.composer.update(cx, |input, cx| {
+            input.set_value("", window, cx);
+        });
+        cx.notify();
+        self.start_goal_summary(&text, cx);
+        let speaker = synapse_core::team_dialogue::mentioned(&team.members, &body)
+            .map_or_else(|| team.lead_id.clone(), |m| m.id.clone());
+        let persist = self.persist.clone();
+        cx.spawn_in(window, async move |this, cx| {
+            let (tx, mut rx) = tokio::sync::mpsc::channel(128);
+            let task = crate::runtime::spawn(async move {
+                run_team_turn(team, &speaker, history, tx).await
+            });
+            let mut messages: HashMap<u32, usize> = HashMap::new();
+            let mut stopped = false;
+            while let Some(event) = rx.recv().await {
+                let running = this
+                    .update_in(cx, |this, _, _| this.state.is_running())
+                    .unwrap_or(false);
+                if !running {
+                    stopped = true;
+                    break;
+                }
+                _ = this.update_in(cx, |this, _, cx| {
+                    match event {
+                        TeamEvent::Start { stream, speaker, lead } => {
+                            let role = if lead { ChatRole::Agent } else { ChatRole::Teammate };
+                            let id = this.state.begin_speaker(&speaker, role);
+                            messages.insert(stream, id);
+                        }
+                        TeamEvent::Delta { stream, text } => {
+                            if let Some(&id) = messages.get(&stream) {
+                                this.state.push_delta(id, &text);
+                                this.state.flush_frame();
+                            }
+                        }
+                        TeamEvent::Usage { stream, usage } => {
+                            if let Some(&id) = messages.get(&stream) {
+                                this.state.set_usage(id, usage);
+                            }
+                        }
+                        TeamEvent::Finish { stream } => {
+                            if let Some(&id) = messages.get(&stream) {
+                                this.state.end_message(id);
+                            }
+                        }
+                        TeamEvent::Ping { from, to, body } => this.state.add_ping(&from, &to, &body),
+                    }
+                    cx.notify();
+                });
+            }
+            if stopped {
+                drop(task);
+            } else {
+                let failure = match task.await {
+                    Ok(Ok(())) => None,
+                    Ok(Err(err)) => Some(err),
+                    Err(err) => Some(LlmError::Stream(err.to_string())),
+                };
+                _ = this.update_in(cx, |this, _, cx| {
+                    match &failure {
+                        Some(err) => this.state.fail_team_turn(err),
+                        None => this.state.finish(),
+                    }
+                    cx.notify();
+                });
+            }
+            _ = this.update_in(cx, |this, _, cx| {
+                if let Some(store) = persist.store.as_deref() {
+                    let _ = this.state.save_to_store(store);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     /// Send-button click: mirror the composer into the draft and drive one
     /// backend turn into a new agent message. Stop-button click: stop the
     /// run and keep the draft (UI.md §5).
@@ -705,37 +1022,57 @@ where
             return;
         }
         let text = self.composer.read(cx).value().to_string();
-        self.state.set_draft(text);
+        self.state.set_draft(text.clone());
         let model = self.model.clone();
-        let Some((agent, req)) = self.state.send_request(&model) else {
+        if let Some(team) = self.team.clone() {
+            self.send_to_team(team, text, window, cx);
+            return;
+        }
+        let Some((agent, mut req)) = self.state.send_request(&model) else {
             return;
         };
+        req.system = self.system.clone();
         self.composer.update(cx, |input, cx| {
             input.set_value("", window, cx);
         });
         cx.notify();
         let backend = self.backend.clone();
         let persist = self.persist.clone();
+        self.start_goal_summary(&text, cx);
         cx.spawn_in(window, async move |this, cx| {
-            let events = match backend.turn_stream(req).await {
-                Ok(events) => events,
-                Err(err) => {
-                    _ = this.update_in(cx, |this, _, cx| {
-                        this.state.fail_turn(agent, &err);
-                        cx.notify();
-                    });
-                    return;
-                }
-            };
-            for event in events {
+            // The model runs on the tokio runtime and sends events as they
+            // arrive; text shows up while the model is still writing.
+            let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+            let task = crate::runtime::spawn(async move { backend.turn_live(req, tx).await });
+            let mut stopped = false;
+            while let Some(event) = rx.recv().await {
                 let running = this
                     .update_in(cx, |this, _, _| this.state.is_running())
                     .unwrap_or(false);
                 if !running {
+                    stopped = true;
                     break;
                 }
                 _ = this.update_in(cx, |this, _, cx| {
                     this.state.apply_event(agent, event);
+                    cx.notify();
+                });
+            }
+            if stopped {
+                // Dropping the task cancels the request.
+                drop(task);
+            } else {
+                let failure = match task.await {
+                    Ok(Ok(())) => None,
+                    Ok(Err(err)) => Some(err),
+                    Err(err) => Some(LlmError::Stream(err.to_string())),
+                };
+                _ = this.update_in(cx, |this, _, cx| {
+                    match &failure {
+                        Some(err) => this.state.fail_turn(agent, err),
+                        None if this.state.is_running() => this.state.finish(),
+                        None => {}
+                    }
                     cx.notify();
                 });
             }
@@ -760,17 +1097,75 @@ where
 {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.sync_scroller(cx);
+        // Ask blocks are for teammates, not for reading.
         let bodies: Vec<String> = self
             .state
             .messages()
             .iter()
-            .map(|m| m.body.clone())
+            .map(|m| match m.role {
+                ChatRole::Agent | ChatRole::Teammate => {
+                    synapse_core::team_dialogue::visible_text(&m.body)
+                }
+                _ => m.body.clone(),
+            })
+            .collect();
+        let notes: Vec<bool> = self
+            .state
+            .messages()
+            .iter()
+            .map(|m| m.role == ChatRole::System)
             .collect();
         let authors: Vec<String> = self
             .state
             .messages()
             .iter()
             .map(|m| m.author.clone())
+            .collect();
+        let avatars: Vec<Option<String>> = authors
+            .iter()
+            .map(|name| {
+                if name == "You" {
+                    return None;
+                }
+                let stored = self
+                    .team
+                    .as_ref()
+                    .and_then(|t| t.members.iter().find(|m| &m.name == name))
+                    .map(|m| m.avatar.clone())
+                    .filter(|a| !a.is_empty());
+                Some(stored.unwrap_or_else(|| {
+                    crate::avatar::AvatarSpec::from_name(name).to_json()
+                }))
+            })
+            .collect();
+        let ping_rows: Vec<Vec<(String, String, String)>> = self
+            .state
+            .messages()
+            .iter()
+            .map(|m| {
+                m.pings
+                    .iter()
+                    .map(|p| {
+                        let avatar = self
+                            .team
+                            .as_ref()
+                            .and_then(|t| t.members.iter().find(|x| x.name == p.to))
+                            .map(|x| x.avatar.clone())
+                            .filter(|a| !a.is_empty())
+                            .unwrap_or_else(|| crate::avatar::AvatarSpec::from_name(&p.to).to_json());
+                        (p.to.clone(), avatar, p.body.clone())
+                    })
+                    .collect()
+            })
+            .collect();
+        let waiting: Vec<bool> = self
+            .state
+            .messages()
+            .iter()
+            .map(|m| {
+                m.streaming
+                    && synapse_core::team_dialogue::visible_text(&m.body).is_empty()
+            })
             .collect();
         let send_label = self.state.send_label().to_string();
         let running = self.state.is_running();
@@ -794,6 +1189,24 @@ where
                 let body = bodies.get(ix).cloned().unwrap_or_default();
                 let author = authors.get(ix).cloned().unwrap_or_default();
                 let is_user = author == "You";
+                let sender = author.clone();
+                if notes.get(ix).copied().unwrap_or(false) {
+                    return v_flex()
+                        .w_full()
+                        .px_4()
+                        .py_1()
+                        .child(
+                            div()
+                                .typeset(TextRole::Caption, app)
+                                .text_color(muted)
+                                .child(body),
+                        )
+                        .into_any_element();
+                }
+                let pinged = ping_rows.get(ix).cloned().unwrap_or_default();
+                if body.is_empty() && pinged.is_empty() && !waiting.get(ix).copied().unwrap_or(false) {
+                    return div().into_any_element();
+                }
                 let text = TextView::markdown(format!("chat-msg-{ix}"), body)
                     .stream_fade(true)
                     .code_block_actions(|_block, _, _| div());
@@ -804,12 +1217,24 @@ where
                     content
                 };
                 let content = content
-                    .child(
-                        div()
+                    .child(match avatars.get(ix).cloned().flatten() {
+                        Some(json) => h_flex()
+                            .gap_2()
+                            .items_center()
+                            .child(crate::avatar_view::avatar_img(&json, &author, 24.0))
+                            .child(
+                                div()
+                                    .typeset(TextRole::Label, app)
+                                    .text_color(muted)
+                                    .child(author),
+                            )
+                            .into_any_element(),
+                        None => div()
                             .typeset(TextRole::Label, app)
                             .text_color(muted)
-                            .child(author),
-                    )
+                            .child(author)
+                            .into_any_element(),
+                    })
                     .child(if is_user {
                         div()
                             .px_3()
@@ -817,9 +1242,16 @@ where
                             .rounded(radius_lg)
                             .bg(bubble_bg)
                             .child(text)
+                    } else if waiting.get(ix).copied().unwrap_or(false) {
+                        div().child(crate::thinking::indicator(("thinking", ix), app))
                     } else {
                         div().child(text)
                     });
+                let content = if pinged.is_empty() {
+                    content
+                } else {
+                    content.child(crate::ping_row::ping_row(ix, &sender, pinged))
+                };
                 let content = match footers.get(ix).cloned().flatten() {
                     Some(footer) => content.child(
                         div()
@@ -834,9 +1266,9 @@ where
                 // however the row was measured.
                 let row = v_flex().w_full().py_2().px_4();
                 if is_user {
-                    row.items_end().child(content)
+                    row.items_end().child(content).into_any_element()
                 } else {
-                    row.items_start().child(content)
+                    row.items_start().child(content).into_any_element()
                 }
             },
         )));

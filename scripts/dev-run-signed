@@ -1,0 +1,10 @@
+#!/bin/sh
+# macOS dev only: build, sign the debug binary with your Apple Development
+# certificate, then run it. A stable signature lets "Always Allow" on the
+# keychain prompt stick across rebuilds. Usage: scripts/dev-run-signed [cargo args]
+set -e
+identity=$(security find-identity -v -p codesigning | sed -n 's/.*"\(Apple Development:[^"]*\)".*/\1/p' | head -1)
+[ -n "$identity" ] || { echo "No Apple Development certificate found (Xcode > Settings > Accounts)."; exit 1; }
+cargo build -p synapse-app "$@"
+codesign --force --sign "$identity" --identifier ai.synapse.app target/debug/synapse
+exec target/debug/synapse

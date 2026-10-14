@@ -3,6 +3,7 @@
 pub mod backend;
 pub mod catalog;
 pub mod cost;
+pub mod discovery;
 pub mod keys;
 pub mod local;
 

@@ -247,13 +247,16 @@ impl LlmError {
             Self::RateLimited(_) => {
                 "The provider is rate-limiting us. Wait a moment and retry.".into()
             }
-            Self::NotFound(m) => {
-                format!("Model not found: {m}. Pick another model in Settings → Providers.")
+            Self::NotFound(m) => format!(
+                "The provider could not find that model or endpoint ({m}). Check the model \
+                 name and the provider's address in Settings → Models."
+            ),
+            Self::BadRequest(m) => format!("The provider rejected the request ({m})."),
+            Self::Provider(m) => format!("The provider had a problem ({m}). Try again shortly."),
+            Self::Network(m) => {
+                format!("Could not reach the provider ({m}). Check your connection.")
             }
-            Self::BadRequest(m) => format!("The request was rejected: {m}"),
-            Self::Provider(m) => format!("The provider failed: {m}"),
-            Self::Network(m) => format!("Network error talking to the provider: {m}"),
-            Self::Stream(m) => format!("The stream broke off: {m}"),
+            Self::Stream(m) => format!("The reply was cut off ({m}). Try again."),
         }
     }
 
@@ -274,12 +277,29 @@ impl LlmError {
     }
 
     fn from_genai_variant(err: &genai::Error) -> Self {
-        let msg = short(&err.to_string());
+        let raw = err.to_string();
+        if let Some(code) = status_code(&raw) {
+            return Self::from_status(code);
+        }
+        let msg = short(&raw);
         match err {
             genai::Error::RequiresApiKey { .. }
             | genai::Error::NoAuthResolver { .. }
             | genai::Error::NoAuthData { .. } => Self::Auth(msg),
             _ => Self::Stream(msg),
+        }
+    }
+
+    /// The error for an HTTP status, with only the code as detail (response
+    /// headers and bodies are noise, and may carry cookies).
+    fn from_status(code: u16) -> Self {
+        let detail = format!("HTTP {code}");
+        match code {
+            401 | 403 => Self::Auth(detail),
+            404 => Self::NotFound(detail),
+            429 => Self::RateLimited(detail),
+            400..=499 => Self::BadRequest(detail),
+            _ => Self::Provider(detail),
         }
     }
 
@@ -299,6 +319,22 @@ impl LlmError {
         }
         Self::Provider(short(msg))
     }
+}
+
+/// genai appends `chat/completions` to the endpoint as is, so
+/// `https://host/openai/v1` would become `.../v1chat/completions`.
+fn with_trailing_slash(url: &str) -> String {
+    if url.ends_with('/') {
+        url.to_string()
+    } else {
+        format!("{url}/")
+    }
+}
+
+/// The status code in a `...InvalidStatusCode(404, ...)` error text.
+fn status_code(msg: &str) -> Option<u16> {
+    let rest = msg.split_once("InvalidStatusCode(")?.1;
+    rest.split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()
 }
 
 fn short(msg: &str) -> String {
@@ -325,6 +361,25 @@ pub trait ModelBackend: Send + Sync {
         &self,
         req: TurnRequest,
     ) -> impl std::future::Future<Output = Result<Vec<AgentEvent>, LlmError>> + Send;
+
+    /// Run a turn and hand each event to `sink` as it arrives, so the UI can
+    /// show text while the model is still writing. Backends that cannot
+    /// stream incrementally fall back to [`Self::turn_stream`] (all at once).
+    /// Stops quietly when the receiver is dropped (the user pressed stop).
+    fn turn_live(
+        &self,
+        req: TurnRequest,
+        sink: tokio::sync::mpsc::Sender<AgentEvent>,
+    ) -> impl std::future::Future<Output = Result<(), LlmError>> + Send {
+        async move {
+            for event in self.turn_stream(req).await? {
+                if sink.send(event).await.is_err() {
+                    break;
+                }
+            }
+            Ok(())
+        }
+    }
 }
 
 // -- genai backend ---------------------------------------------------------
@@ -360,7 +415,7 @@ impl GenaiBackend {
                     let genai::ServiceTarget { model, .. } = target;
                     let model = genai::ModelIden::new(genai::adapter::AdapterKind::OpenAI, model.model_name);
                     Ok(genai::ServiceTarget {
-                        endpoint: genai::resolver::Endpoint::from_owned(url.clone()),
+                        endpoint: genai::resolver::Endpoint::from_owned(with_trailing_slash(&url)),
                         auth: target.auth,
                         model,
                     })
@@ -584,6 +639,54 @@ impl ModelBackend for GenaiBackend {
         }
         Ok(events_from_stream(chunks, end))
     }
+
+    async fn turn_live(
+        &self,
+        req: TurnRequest,
+        sink: tokio::sync::mpsc::Sender<AgentEvent>,
+    ) -> Result<(), LlmError> {
+        let model = self.model_for(&req);
+        let res = self
+            .client
+            .exec_chat_stream(&model, to_chat_request(&req), Some(&to_chat_options(&req)))
+            .await
+            .map_err(|e| LlmError::from_genai(&e))?;
+        let mut stream = res.stream;
+        let mut text = String::new();
+        let mut end: Option<genai::chat::StreamEnd> = None;
+        while let Some(ev) = stream.next().await {
+            match ev {
+                Ok(genai::chat::ChatStreamEvent::Chunk(c)) => {
+                    if c.content.is_empty() {
+                        continue;
+                    }
+                    text.push_str(&c.content);
+                    if sink.send(AgentEvent::TextDelta(c.content)).await.is_err() {
+                        return Ok(());
+                    }
+                }
+                Ok(genai::chat::ChatStreamEvent::Start | genai::chat::ChatStreamEvent::ReasoningChunk(_)) => {}
+                Ok(genai::chat::ChatStreamEvent::End(e)) => {
+                    end = Some(e);
+                    break;
+                }
+                Err(e) => return Err(LlmError::from_genai(&e)),
+            }
+        }
+        // Usage, tool calls and the final `Done` (no deltas: they went out above).
+        for event in events_from_stream(Vec::new(), end) {
+            let event = match event {
+                AgentEvent::Done { text: t, tool_calls, usage } if t.is_empty() => {
+                    AgentEvent::Done { text: text.clone(), tool_calls, usage }
+                }
+                other => other,
+            };
+            if sink.send(event).await.is_err() {
+                break;
+            }
+        }
+        Ok(())
+    }
 }
 
 // -- scripted mock (tests) -------------------------------------------------
@@ -701,6 +804,25 @@ mod backend_tests {
 
     fn user_req(text: &str) -> TurnRequest {
         TurnRequest::new("test-model").with_message(TurnMessage::user(text))
+    }
+
+    #[tokio::test]
+    async fn turn_live_hands_events_to_the_sink_one_by_one() {
+        let mock = MockLlm::with_text("one two three");
+        let (tx, mut rx) = tokio::sync::mpsc::channel(4);
+        let run = tokio::spawn(async move { mock.turn_live(user_req("hi"), tx).await });
+        let mut deltas = Vec::new();
+        let mut done = false;
+        while let Some(event) = rx.recv().await {
+            match event {
+                AgentEvent::TextDelta(d) => deltas.push(d),
+                AgentEvent::Done { .. } => done = true,
+                _ => {}
+            }
+        }
+        run.await.unwrap().unwrap();
+        assert_eq!(deltas, ["one ", "two ", "three"]);
+        assert!(done);
     }
 
     #[tokio::test]

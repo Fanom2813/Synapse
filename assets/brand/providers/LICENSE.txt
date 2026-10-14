@@ -1,0 +1,4 @@
+Logos of AI providers shown next to their name in Settings and the model picker.
+Files come from @lobehub/icons-static-svg 1.50.0 (https://github.com/lobehub/lobe-icons,
+MIT), with only the fixed width/height and inline style removed. The marks are
+trademarks of their owners and are shown only to identify the matching provider.

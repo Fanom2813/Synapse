@@ -4,11 +4,13 @@
 mod actions;
 mod add_agent;
 mod avatar_dialog;
+mod delete_project;
 pub(crate) mod engine_dialog;
 mod key_dialog;
 mod main_area;
 mod nav_row;
 mod new_project;
+pub(crate) mod persona_list;
 mod right_panel;
 mod sidebar;
 mod title_bar;
@@ -58,7 +60,13 @@ pub struct ShellView {
     /// Settings → Agents, loaded when that page opens.
     /// Settings → Models, loaded when that page opens.
     pub(crate) models_page: Option<crate::views::settings::models::ModelsPage>,
+    /// Outcome of the last model-list refresh, shown on the Models page.
+    pub(crate) models_note: Option<String>,
     pub(crate) agents_page: Option<crate::views::settings::agents::AgentsPage>,
+    /// The library list on Settings → Agents, built the first time it opens.
+    pub(crate) agents_list: Option<Entity<persona_list::PersonaList>>,
+    /// Goal of the open project, written by a model from its first prompt.
+    pub(crate) goal: String,
     focus: FocusHandle,
 }
 
@@ -74,11 +82,58 @@ impl ShellView {
             providers: None,
             team: Vec::new(),
             models_page: None,
+            models_note: None,
             agents_page: None,
+            agents_list: None,
+            goal: String::new(),
             focus: cx.focus_handle(),
         };
         view.load_team();
+        view.track_goal(cx);
+        cx.subscribe(&view.chat, |this, _, event: &crate::chat_view::GoalWritten, cx| {
+            if this.shell.open_project_id.as_deref() == Some(event.project_id.as_str()) {
+                this.goal = event.goal.clone();
+                this.sync_chat_context(cx);
+                cx.notify();
+            }
+        })
+        .detach();
         view
+    }
+
+    /// Show the open project's goal, and have the chat write one from the
+    /// next prompt while it has none.
+    fn track_goal(&mut self, cx: &mut Context<Self>) {
+        let project = self.shell.open_project_id.clone();
+        let goal = match (&project, crate::window::open_store()) {
+            (Some(id), Some(store)) => store.get_project(id).map(|p| p.goal).unwrap_or_default(),
+            _ => String::new(),
+        };
+        let wants = project.filter(|_| goal.is_empty());
+        self.chat.update(cx, |chat, _| chat.write_goal_for(wants));
+        self.goal = goal;
+        self.sync_chat_context(cx);
+    }
+
+    /// Tell the chat's model about the open project: name, goal and team.
+    pub(crate) fn sync_chat_context(&mut self, cx: &mut Context<Self>) {
+        let system = self.shell.open_project_id.as_ref().map(|_| {
+            let team: Vec<(String, String)> =
+                self.team.iter().map(|a| (a.name.clone(), a.role.clone())).collect();
+            let name = self.shell.title.project_name.clone().unwrap_or_default();
+            crate::project_context::system_prompt(&name, &self.goal, &team)
+        });
+        let team = match (&self.shell.open_project_id, crate::window::open_store()) {
+            (Some(id), Some(store)) => {
+                let name = self.shell.title.project_name.clone().unwrap_or_default();
+                crate::team_backends::team_env(&store, id, &name, &self.goal)
+            }
+            _ => None,
+        };
+        self.chat.update(cx, |chat, _| {
+            chat.set_system(system);
+            chat.set_team(team);
+        });
     }
 
     /// Reload the team of the open project from the store.
@@ -104,6 +159,7 @@ impl ShellView {
 
     pub(crate) fn refresh_team(&mut self, cx: &mut Context<Self>) {
         self.load_team();
+        self.sync_chat_context(cx);
         cx.notify();
     }
 
@@ -121,7 +177,7 @@ impl ShellView {
             self.reload_models_page(cx);
         }
         if screen == AppScreen::Settings(SettingsSection::Agents) {
-            self.open_agents_page(cx);
+            self.open_agents_page(window, cx);
         }
         match screen {
             AppScreen::Room => self.shell.open_room(),
@@ -152,6 +208,7 @@ impl ShellView {
         self.shell.open_project(id);
         self.shell.open_room();
         self.load_team();
+        self.track_goal(cx);
         let name = self.shell.title.project_name.clone().unwrap_or_default();
         let conversation = conversation.or_else(|| {
             crate::window::open_store()

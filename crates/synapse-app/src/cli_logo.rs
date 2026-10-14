@@ -101,18 +101,26 @@ pub fn tile(id: &str, label: &str, size: f32, cx: &App) -> Div {
                 .size(px(size * 0.56))
                 .text_color(theme.colors.foreground),
         ),
-        None => base
-            .text_color(theme.colors.muted_foreground)
-            .text_size(px(size * 0.45))
-            .font_weight(FontWeight::SEMIBOLD)
-            .child(
-                label
-                    .chars()
-                    .next()
-                    .unwrap_or('?')
-                    .to_uppercase()
-                    .to_string(),
+        None => match crate::provider_logo::path_for(id) {
+            Some(path) => base.child(
+                svg()
+                    .path(path)
+                    .size(px(size * 0.56))
+                    .text_color(theme.colors.foreground),
             ),
+            None => base
+                .text_color(theme.colors.muted_foreground)
+                .text_size(px(size * 0.45))
+                .font_weight(FontWeight::SEMIBOLD)
+                .child(
+                    label
+                        .chars()
+                        .next()
+                        .unwrap_or('?')
+                        .to_uppercase()
+                        .to_string(),
+                ),
+        },
     }
 }
 

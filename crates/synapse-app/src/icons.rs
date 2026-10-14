@@ -14,6 +14,7 @@ pub const COMMAND: Icon = Icon::Command;
 pub const DOTS: Icon = Icon::Ellipsis;
 pub const PLUS: Icon = Icon::Plus;
 pub const REMOVE: Icon = Icon::Minus;
+pub const DELETE: Icon = Icon::Delete;
 pub const BACK: Icon = Icon::ArrowLeft;
 pub const CHEVRON_DOWN: Icon = Icon::ChevronDown;
 pub const GEAR: Icon = Icon::Settings;

@@ -166,6 +166,7 @@ pub fn catalog_with_custom(store: Option<&synapse_store::Store>) -> Option<Catal
     let mut catalog = embedded_catalog()?.clone();
     if let Some(store) = store {
         CustomProviders::load(store).apply(&mut catalog);
+        crate::model_discovery::apply(store, &mut catalog);
     }
     Some(catalog)
 }

@@ -198,7 +198,11 @@ impl AddProviderForm {
                 .spawn(async move {
                     let store = open_store()
                         .ok_or_else(|| anyhow::anyhow!("The settings database is unavailable."))?;
-                    add_provider(&store, &synapse_llm::keys::KeychainSecretStore, request)
+                    let added =
+                        add_provider(&store, &synapse_llm::keys::KeychainSecretStore, request)?;
+                    // Offer what the provider serves now, not the catalog's old list.
+                    let _ = crate::model_discovery::refresh(&added.id);
+                    Ok(added)
                 })
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {

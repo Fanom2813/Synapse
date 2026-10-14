@@ -97,7 +97,10 @@ impl KeyForm {
                 this.busy = false;
                 match result {
                     Ok(()) => {
-                        let _ = this.parent.update(cx, |view, cx| view.reload_models_page(cx));
+                        let _ = this.parent.update(cx, |view, cx| {
+                            view.reload_models_page(cx);
+                            view.refresh_chat_backend(cx);
+                        });
                         window.close_dialog(cx);
                     }
                     Err(e) => {
@@ -121,7 +124,14 @@ impl KeyForm {
             move |id| {
                 ProvidersSettings::default()
                     .set_key(&KeychainSecretStore, id, &key)
-                    .map_err(|e| e.to_string())
+                    .map_err(|e| e.to_string())?;
+                if let Some(store) = crate::window::open_store() {
+                    crate::provider_setup::mark_key_saved(&store, id, true);
+                }
+                // A new key may unlock a different model list; failing here
+                // (offline) leaves the saved list as it was.
+                let _ = crate::model_discovery::refresh(id);
+                Ok(())
             },
             window,
             cx,
@@ -133,7 +143,11 @@ impl KeyForm {
             |id| {
                 ProvidersSettings::default()
                     .remove_key(&KeychainSecretStore, id)
-                    .map_err(|e| e.to_string())
+                    .map_err(|e| e.to_string())?;
+                if let Some(store) = crate::window::open_store() {
+                    crate::provider_setup::mark_key_saved(&store, id, false);
+                }
+                Ok(())
             },
             window,
             cx,

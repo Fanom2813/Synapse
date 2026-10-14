@@ -171,6 +171,62 @@ impl Store {
         })
     }
 
+    pub fn set_project_goal(&self, id: &str, goal: &str) -> Result<()> {
+        self.with_writer(|c| {
+            let n = c.execute("UPDATE projects SET goal=?1 WHERE id=?2", params![goal, id])?;
+            if n == 0 {
+                return Err(StoreError::NotFound("project", id.into()));
+            }
+            Ok(())
+        })
+    }
+
+    /// Delete a project and everything that belongs to it: conversations and
+    /// their messages, runs, artifacts (with versions), sources, citations,
+    /// memories, schedules, embeddings and its team assignments. Agents and
+    /// personas are shared across projects and stay. The project's folder on
+    /// disk is the user's and is never touched.
+    pub fn delete_project(&self, id: &str) -> Result<()> {
+        self.with_writer(|c| {
+            let owned_messages = "SELECT m.id FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.project_id = ?1";
+            let tx = c.unchecked_transaction()?;
+            tx.execute(
+                &format!(
+                    "DELETE FROM vec_chunks WHERE owner_id = ?1 \
+                     OR owner_id IN (SELECT id FROM sources WHERE project_id = ?1) \
+                     OR owner_id IN (SELECT id FROM artifacts WHERE project_id = ?1) \
+                     OR owner_id IN ({owned_messages})"
+                ),
+                params![id],
+            )?;
+            tx.execute(
+                &format!(
+                    "DELETE FROM citations WHERE message_id IN ({owned_messages}) \
+                     OR artifact_id IN (SELECT id FROM artifacts WHERE project_id = ?1) \
+                     OR source_id IN (SELECT id FROM sources WHERE project_id = ?1)"
+                ),
+                params![id],
+            )?;
+            tx.execute("DELETE FROM sources WHERE project_id = ?1", params![id])?;
+            tx.execute("DELETE FROM schedules WHERE project_id = ?1", params![id])?;
+            tx.execute(
+                "DELETE FROM memories WHERE scope = 'project' AND scope_id = ?1",
+                params![id],
+            )?;
+            tx.execute(
+                "DELETE FROM settings WHERE key = ?1",
+                params![format!("project.team_seeded.{id}")],
+            )?;
+            // Conversations, messages, runs, artifacts and team rows follow by cascade.
+            let n = tx.execute("DELETE FROM projects WHERE id = ?1", params![id])?;
+            if n == 0 {
+                return Err(StoreError::NotFound("project", id.into()));
+            }
+            tx.commit()?;
+            Ok(())
+        })
+    }
+
     pub fn archive_project(&self, id: &str, archived: bool) -> Result<()> {
         self.with_writer(|c| {
             let n = c.execute(
@@ -180,13 +236,6 @@ impl Store {
             if n == 0 {
                 return Err(StoreError::NotFound("project", id.into()));
             }
-            Ok(())
-        })
-    }
-
-    pub fn delete_project(&self, id: &str) -> Result<()> {
-        self.with_writer(|c| {
-            c.execute("DELETE FROM projects WHERE id=?1", params![id])?;
             Ok(())
         })
     }

@@ -124,6 +124,21 @@ impl AppShell {
         }
     }
 
+    /// A project was deleted: drop it from the list. If it was the open one,
+    /// open the next project, or show none when it was the last. Returns
+    /// whether the open project changed.
+    pub fn forget_project(&mut self, id: &str) -> bool {
+        self.projects.retain(|p| p.id != id);
+        if self.open_project_id.as_deref() != Some(id) {
+            return false;
+        }
+        self.open_project_id = None;
+        self.title.project_name = None;
+        self.layout.sidebar.selected_project_id = None;
+        self.initial_workspace();
+        true
+    }
+
     /// Open a project: restore its persisted layout, update the title bar.
     /// Returns false when the id is unknown.
     pub fn open_project(&mut self, id: &str) -> bool {
@@ -250,6 +265,30 @@ mod tests {
             name: name.to_string(),
             has_messages,
         }
+    }
+
+    #[test]
+    fn deleting_the_open_project_opens_the_next_or_none() {
+        let mut shell = AppShell::open();
+        shell.projects.push(project("p1", "One", false));
+        shell.projects.push(project("p2", "Two", false));
+        shell.initial_workspace();
+        assert_eq!(shell.open_project_id.as_deref(), Some("p1"));
+
+        // Deleting another project leaves the open one alone.
+        assert!(!shell.forget_project("p2"));
+        assert_eq!(shell.open_project_id.as_deref(), Some("p1"));
+        shell.projects.push(project("p3", "Three", false));
+
+        // Deleting the open one opens the next.
+        assert!(shell.forget_project("p1"));
+        assert_eq!(shell.open_project_id.as_deref(), Some("p3"));
+        assert_eq!(shell.title.project_name.as_deref(), Some("Three"));
+
+        // Deleting the last one leaves nothing open.
+        assert!(shell.forget_project("p3"));
+        assert_eq!(shell.open_project_id, None);
+        assert_eq!(shell.title.project_name, None);
     }
 
     #[test]

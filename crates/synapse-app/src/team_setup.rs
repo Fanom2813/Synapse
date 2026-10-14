@@ -156,7 +156,23 @@ pub fn reapply_all(store: &Store) -> Result<(), String> {
 /// Set a provider's default model; agents on "provider default" follow it.
 pub fn set_provider_default(store: &Store, provider: &str, model: &str) -> Result<(), String> {
     crate::model_defaults::set_provider_default(store, provider, model)?;
+    follow_in_main_chat(store, provider, model);
     reapply_all(store)
+}
+
+/// The main chat talks to the Lead model: when it is on this provider, it
+/// follows the provider's new default instead of staying on an older pick.
+fn follow_in_main_chat(store: &Store, provider: &str, model: &str) {
+    use crate::settings_providers::{ModelRole, ProvidersSettings};
+    let Some(catalog) = crate::custom_providers::catalog_with_custom(Some(store)) else {
+        return;
+    };
+    if let Ok(mut settings) = ProvidersSettings::load(store) {
+        let on_provider = settings.default_for(ModelRole::Lead).is_some_and(|(p, _)| p == provider);
+        if on_provider && settings.set_default(&catalog, ModelRole::Lead, provider, model).is_ok() {
+            let _ = settings.save(store);
+        }
+    }
 }
 
 /// Set a CLI's default model (`None` = the CLI's own); agents on "CLI default" follow it.
@@ -226,35 +242,41 @@ fn slug(name: &str) -> String {
 
 /// Add a persona to a project. The agent row is shared by every project that
 /// uses the same persona, so editing it once applies everywhere.
+/// The library agent for a persona, created (with its engine applied) the
+/// first time it is needed. Agents are shared by every project.
+pub fn ensure_agent(store: &Store, persona: &PersonaDraft) -> Result<Agent, String> {
+    let id = agent_id(&persona.name);
+    if let Ok(existing) = store.get_agent(&id) {
+        return Ok(existing);
+    }
+    let role = persona.role.clone().unwrap_or_else(|| persona.name.clone());
+    let created = store
+        .create_agent(&NewAgent {
+            id: id.clone(),
+            name: persona.name.clone(),
+            role,
+            instructions: persona.instructions.clone(),
+            backend: String::new(),
+            avatar: AvatarSpec::from_name(&persona.name).to_json(),
+            tools: serde_json::to_string(&persona.tools).unwrap_or_else(|_| "[]".into()),
+            permissions: "[]".into(),
+            persona_source: format!(
+                "{}@{}:{} ({})",
+                persona.source.repo, persona.source.sha, persona.source.path, persona.source.license
+            ),
+        })
+        .map_err(|e| e.to_string())?;
+    apply_engine(store, &created)?;
+    store.get_agent(&id).map_err(|e| e.to_string())
+}
+
+/// The id a persona's agent has in the store.
+pub fn agent_id(name: &str) -> String {
+    format!("agent-{}", slug(name))
+}
+
 pub fn add_persona(store: &Store, project_id: &str, persona: &PersonaDraft) -> Result<Agent, String> {
-    let id = format!("agent-{}", slug(&persona.name));
-    let agent = match store.get_agent(&id) {
-        Ok(existing) => existing,
-        Err(_) => {
-            let role = persona.role.clone().unwrap_or_else(|| persona.name.clone());
-            let created = store
-                .create_agent(&NewAgent {
-                    id: id.clone(),
-                    name: persona.name.clone(),
-                    role,
-                    instructions: persona.instructions.clone(),
-                    backend: String::new(),
-                    avatar: AvatarSpec::from_name(&persona.name).to_json(),
-                    tools: serde_json::to_string(&persona.tools).unwrap_or_else(|_| "[]".into()),
-                    permissions: "[]".into(),
-                    persona_source: format!(
-                        "{}@{}:{} ({})",
-                        persona.source.repo,
-                        persona.source.sha,
-                        persona.source.path,
-                        persona.source.license
-                    ),
-                })
-                .map_err(|e| e.to_string())?;
-            apply_engine(store, &created)?;
-            store.get_agent(&id).map_err(|e| e.to_string())?
-        }
-    };
+    let agent = ensure_agent(store, persona)?;
     store
         .add_agent_to_project(project_id, &agent.id, "{}")
         .map_err(|e| e.to_string())?;

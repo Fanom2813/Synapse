@@ -12,7 +12,6 @@ pub enum SettingsSection {
     CliAgents,
     Search,
     Mcp,
-    Permissions,
     Appearance,
     Background,
     Data,
@@ -21,12 +20,11 @@ pub enum SettingsSection {
 
 impl SettingsSection {
     /// Providers and CLIs are set up on the Models page; their own pages are no longer listed.
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 8] = [
         Self::Models,
         Self::Agents,
         Self::Search,
         Self::Mcp,
-        Self::Permissions,
         Self::Appearance,
         Self::Background,
         Self::Data,
@@ -41,7 +39,6 @@ impl SettingsSection {
             Self::CliAgents => "CLI agents",
             Self::Search => "Search",
             Self::Mcp => "MCP servers",
-            Self::Permissions => "Permissions",
             Self::Appearance => "Appearance",
             Self::Background => "Background",
             Self::Data => "Data",
@@ -57,7 +54,6 @@ impl SettingsSection {
             Self::CliAgents => Icon::SquareTerminal,
             Self::Search => icons::MAGNIFIER,
             Self::Mcp => Icon::Network,
-            Self::Permissions => Icon::ShieldCheck,
             Self::Appearance => Icon::Palette,
             Self::Background => Icon::Power,
             Self::Data => Icon::HardDrive,
@@ -74,7 +70,6 @@ impl SettingsSection {
             Self::CliAgents => "Coding agents found on this computer and their login state.",
             Self::Search => "SearXNG address and search keys for deep research.",
             Self::Mcp => "Tool servers agents can use, with per-tool switches.",
-            Self::Permissions => "What agents may do without asking.",
             Self::Appearance => "Theme, accent colour, text size and motion.",
             Self::Background => "Keep running when closed, launch at login, hotkey.",
             Self::Data => "Project folders, export and clearing data.",

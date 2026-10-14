@@ -4,7 +4,6 @@
 //! under Settings → Agents.
 
 use super::setting_row::card;
-use crate::settings_providers::ProvidersSettings;
 use crate::theme::TextRole;
 use crate::typography::Typography as _;
 use crate::views::shell::engine_dialog::EngineTarget;
@@ -41,14 +40,12 @@ pub(crate) struct ModelsPage {
 }
 
 fn load_providers() -> Option<Vec<ProviderEntry>> {
-    use synapse_llm::keys::KeychainSecretStore;
     let store = crate::window::open_store()?;
-    let settings = ProvidersSettings::load(&store).unwrap_or_default();
     Some(
         crate::provider_setup::list_added(&store)
             .into_iter()
             .map(|p| ProviderEntry {
-                has_key: settings.has_key(&KeychainSecretStore, &p.id),
+                has_key: crate::provider_setup::key_saved(&store, &p.id),
                 default_model: crate::model_defaults::provider_default(&store, &p.id),
                 id: p.id,
                 name: p.name,
@@ -71,6 +68,47 @@ fn cli_rows(found: Vec<crate::onboarding::CliEntry>) -> Vec<CliRow> {
 }
 
 impl ShellView {
+    /// Rebuild the chat's backend from the saved key and Lead model, so a
+    /// changed key or model applies to the next message without a restart.
+    /// The keychain read runs off the UI thread.
+    pub(crate) fn refresh_chat_backend(&mut self, cx: &mut Context<Self>) {
+        crate::team_backends::forget_keys();
+        cx.spawn(async move |this, cx| {
+            let (backend, model, persist) = cx
+                .background_executor()
+                .spawn(async { crate::window::chat_config() })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.chat.update(cx, |chat, cx| {
+                    chat.reconfigure(backend, model, persist);
+                    cx.notify();
+                });
+            });
+        })
+        .detach();
+    }
+
+    /// Ask a provider for its live model list, then redraw. Runs off the UI
+    /// thread (keychain read plus a network call).
+    pub(crate) fn refresh_provider_models(&mut self, id: String, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            let name = id.clone();
+            let result = cx
+                .background_executor()
+                .spawn(async move { crate::model_discovery::refresh(&id) })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.models_note = Some(match result {
+                    Ok(n) => format!("{name} serves {n} models. The pickers now show them."),
+                    Err(e) => format!("Could not update {name}'s models: {e}"),
+                });
+                this.reload_models_page(cx);
+                this.refresh_chat_backend(cx);
+            });
+        })
+        .detach();
+    }
+
     /// Re-read the page in the background; detection of CLIs runs once.
     pub(crate) fn reload_models_page(&mut self, cx: &mut Context<Self>) {
         let detect = self.models_page.as_ref().map_or(true, |p| p.clis.is_none());
@@ -128,7 +166,10 @@ impl ShellView {
                     }
                 })
                 .await;
-            let _ = this.update(cx, |this, cx| this.reload_models_page(cx));
+            let _ = this.update(cx, |this, cx| {
+                this.reload_models_page(cx);
+                this.refresh_chat_backend(cx);
+            });
         })
         .detach();
     }
@@ -159,7 +200,8 @@ pub(super) fn page(view: &ShellView, cx: &mut Context<ShellView>) -> AnyElement 
     let mut providers = card(&t);
     let hover = t.colors.list_hover;
     for (n, p) in page.providers.iter().enumerate() {
-        let (pick_id, key_id, remove_id) = (p.id.clone(), p.id.clone(), p.id.clone());
+        let (pick_id, key_id, remove_id, sync_id) =
+            (p.id.clone(), p.id.clone(), p.id.clone(), p.id.clone());
         let (key_name, has_key) = (p.name.clone(), p.has_key);
         let model = p.default_model.clone().unwrap_or_else(|| "no model".into());
         providers = providers.child(
@@ -169,7 +211,7 @@ pub(super) fn page(view: &ShellView, cx: &mut Context<ShellView>) -> AnyElement 
                 .px_2()
                 .py_1()
                 .border_b_1()
-                .border_color(t.colors.border)
+                .border_color(if n + 1 < page.providers.len() { t.colors.border } else { t.transparent })
                 .child(
                     h_flex()
                         .id(("provider-row", n))
@@ -204,6 +246,16 @@ pub(super) fn page(view: &ShellView, cx: &mut Context<ShellView>) -> AnyElement 
                                         )),
                                 ),
                         ),
+                )
+                .child(
+                    Button::new(("provider-sync", n))
+                        .ghost()
+                        .small()
+                        .label("Refresh")
+                        .tooltip("Fetch the models this provider offers now")
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.refresh_provider_models(sync_id.clone(), cx)
+                        })),
                 )
                 .child(
                     Button::new(("provider-key", n))
@@ -267,7 +319,7 @@ pub(super) fn page(view: &ShellView, cx: &mut Context<ShellView>) -> AnyElement 
                         .px_4()
                         .py_3()
                         .border_b_1()
-                        .border_color(t.colors.border)
+                        .border_color(if n + 1 < found.len() { t.colors.border } else { t.transparent })
                         .cursor_pointer()
                         .hover(move |r| r.bg(hover))
                         .on_click(cx.listener(move |this, _, window, cx| {
@@ -314,12 +366,21 @@ pub(super) fn page(view: &ShellView, cx: &mut Context<ShellView>) -> AnyElement 
                                 window,
                                 cx,
                                 std::rc::Rc::new(move |_, app| {
-                                    let _ = parent.update(app, |view, cx| view.reload_models_page(cx));
+                                    let _ = parent.update(app, |view, cx| {
+                                        view.reload_models_page(cx);
+                                        view.refresh_chat_backend(cx);
+                                    });
                                 }),
                             );
                         })),
                 ),
         )
+        .children(view.models_note.clone().map(|note| {
+            div()
+                .typeset(TextRole::Caption, cx)
+                .text_color(cx.theme().colors.muted_foreground)
+                .child(note)
+        }))
         .child(providers)
         .child(heading("CODING CLIS", cx))
         .child(clis)

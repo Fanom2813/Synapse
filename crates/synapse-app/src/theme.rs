@@ -63,6 +63,13 @@ impl fmt::Display for ResolvedTheme {
     }
 }
 
+/// Spring parameters (stiffness, damping) from UI.md §5.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Spring {
+    pub stiffness: f32,
+    pub damping: f32,
+}
+
 /// Motion tokens from UI.md §5. Single source of truth; views must not
 /// inline animation durations.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -79,6 +86,22 @@ pub struct MotionTokens {
     pub stagger_ms: u32,
     /// Max staggered items.
     pub stagger_max: u32,
+    /// stiffness 170, damping 26: avatars, drag/resize settle, list reflow.
+    pub spring_soft: Spring,
+    /// stiffness 260, damping 18: send→stop morph, badge bounce, avatar hop.
+    pub spring_bouncy: Spring,
+}
+
+impl MotionTokens {
+    /// Exit is a faster fade: 60 % of the enter duration (UI.md §5).
+    pub fn exit_ms(self, enter_ms: u32) -> u32 {
+        enter_ms * 60 / 100
+    }
+
+    /// Stagger delay for item `index` (0-based); capped at [`Self::stagger_max`].
+    pub fn stagger_delay_ms(self, index: u32) -> u32 {
+        self.stagger_ms * index.min(self.stagger_max.saturating_sub(1))
+    }
 }
 
 impl Default for MotionTokens {
@@ -90,6 +113,14 @@ impl Default for MotionTokens {
             emphasized_ms: 280,
             stagger_ms: 30,
             stagger_max: 6,
+            spring_soft: Spring {
+                stiffness: 170.0,
+                damping: 26.0,
+            },
+            spring_bouncy: Spring {
+                stiffness: 260.0,
+                damping: 18.0,
+            },
         }
     }
 }

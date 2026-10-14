@@ -22,6 +22,7 @@ pub mod lifecycle;
 pub mod logging;
 pub mod mcp_settings;
 pub mod memory_screens;
+pub mod motion;
 pub mod notifications;
 pub mod onboarding;
 pub mod perf_probe;

@@ -1,0 +1,162 @@
+[
+  {
+    "id": "filesystem",
+    "name": "Filesystem",
+    "description": "Read and write Markdown and text files in allowed folders.",
+    "kind": "local",
+    "category": "Files",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+    "needs_oauth": false,
+    "reads": ["read files", "list folders"],
+    "writes": ["write and edit files"]
+  },
+  {
+    "id": "obsidian-vault",
+    "name": "Obsidian Vault",
+    "description": "Search and edit notes in a local Obsidian vault folder.",
+    "kind": "local",
+    "category": "Notes",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+    "needs_oauth": false,
+    "reads": ["read notes", "search vault"],
+    "writes": ["write notes"]
+  },
+  {
+    "id": "sqlite",
+    "name": "SQLite",
+    "description": "Query local SQLite databases.",
+    "kind": "local",
+    "category": "Data",
+    "command": "uvx",
+    "args": ["mcp-server-sqlite"],
+    "needs_oauth": false,
+    "reads": ["run read-only queries", "list tables"],
+    "writes": []
+  },
+  {
+    "id": "postgres",
+    "name": "Postgres",
+    "description": "Query a local Postgres database (read-only by default).",
+    "kind": "local",
+    "category": "Data",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-postgres"],
+    "needs_oauth": false,
+    "reads": ["run read-only queries", "describe schema"],
+    "writes": []
+  },
+  {
+    "id": "git",
+    "name": "Git",
+    "description": "Branch, log and diff tools for the project repo.",
+    "kind": "local",
+    "category": "Developer",
+    "command": "uvx",
+    "args": ["mcp-server-git"],
+    "needs_oauth": false,
+    "reads": ["log and diff", "show status"],
+    "writes": ["create branches", "commit with approval"]
+  },
+  {
+    "id": "playwright",
+    "name": "Browser (Playwright)",
+    "description": "Opt-in browser control for JS-heavy pages.",
+    "kind": "local",
+    "category": "Browser",
+    "command": "npx",
+    "args": ["-y", "@playwright/mcp@latest"],
+    "needs_oauth": false,
+    "reads": ["read pages", "screenshot"],
+    "writes": ["fill forms (always asks)"]
+  },
+  {
+    "id": "github",
+    "name": "GitHub",
+    "description": "Issues, pull requests and search over your repos.",
+    "kind": "remote",
+    "category": "Developer",
+    "url": "https://api.githubcopilot.com/mcp",
+    "needs_oauth": true,
+    "reads": ["read issues and PRs", "search code"],
+    "writes": ["comment on issues", "open pull requests"]
+  },
+  {
+    "id": "notion",
+    "name": "Notion",
+    "description": "Pages and databases in your Notion workspace.",
+    "kind": "remote",
+    "category": "Notes",
+    "url": "https://mcp.notion.com/mcp",
+    "needs_oauth": true,
+    "reads": ["read pages", "query databases"],
+    "writes": ["create and update pages"]
+  },
+  {
+    "id": "slack",
+    "name": "Slack",
+    "description": "Read channels and send messages in your workspace.",
+    "kind": "remote",
+    "category": "Team",
+    "url": "https://slack.mcp.example.com/mcp",
+    "needs_oauth": true,
+    "reads": ["read channels", "search messages"],
+    "writes": ["send messages"]
+  },
+  {
+    "id": "linear",
+    "name": "Linear",
+    "description": "Issues and projects in your Linear workspace.",
+    "kind": "remote",
+    "category": "Team",
+    "url": "https://mcp.linear.app/mcp",
+    "needs_oauth": true,
+    "reads": ["read issues", "list projects"],
+    "writes": ["create and update issues"]
+  },
+  {
+    "id": "google-workspace",
+    "name": "Google Workspace",
+    "description": "Drive files, Gmail and Calendar where the vendor MCP is available.",
+    "kind": "remote",
+    "category": "Productivity",
+    "url": "https://workspace.mcp.example.com/mcp",
+    "needs_oauth": true,
+    "reads": ["read files and mail", "list calendar events"],
+    "writes": ["create files", "send mail", "create events"]
+  },
+  {
+    "id": "composio",
+    "name": "Composio",
+    "description": "Thousands of apps behind one MCP endpoint. Bring your own Composio key.",
+    "kind": "aggregator",
+    "category": "Aggregators",
+    "url": "https://mcp.composio.dev/mcp",
+    "needs_oauth": true,
+    "reads": ["read from connected apps"],
+    "writes": ["write to connected apps"]
+  },
+  {
+    "id": "zapier",
+    "name": "Zapier MCP",
+    "description": "Your Zaps as tools. Bring your own Zapier account.",
+    "kind": "aggregator",
+    "category": "Aggregators",
+    "url": "https://mcp.zapier.com/api/mcp",
+    "needs_oauth": true,
+    "reads": ["read from connected apps"],
+    "writes": ["run actions"]
+  },
+  {
+    "id": "pipedream",
+    "name": "Pipedream",
+    "description": "Long-tail app APIs behind one MCP endpoint. Bring your own key.",
+    "kind": "aggregator",
+    "category": "Aggregators",
+    "url": "https://mcp.pipedream.com/mcp",
+    "needs_oauth": true,
+    "reads": ["read from connected apps"],
+    "writes": ["run actions"]
+  }
+]

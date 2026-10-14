@@ -11,8 +11,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 use thiserror::Error;
 
 use crate::models::{
-    Agent, Conversation, Message, NewAgent, NewMessage, NewProject, NewSkill, NewToolCall,
-    Project, Skill, ToolCall,
+    Agent, Conversation, Message, NewAgent, NewMessage, NewProject, NewSkill, NewToolCall, Project,
+    Skill, ToolCall,
 };
 use crate::schema::migrations;
 

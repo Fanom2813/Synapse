@@ -102,7 +102,10 @@ impl ConnectorEntry {
         };
         let oauth = if self.needs_oauth {
             Some(OAuthServerConfig {
-                authorization_endpoint: format!("https://auth.example.test/authorize?server={}", self.id),
+                authorization_endpoint: format!(
+                    "https://auth.example.test/authorize?server={}",
+                    self.id
+                ),
                 token_endpoint: "https://auth.example.test/token".into(),
                 client_id: format!("synapse-{}", self.id),
                 scopes: Vec::new(),
@@ -132,13 +135,21 @@ fn validate_catalog(entries: &[ConnectorEntry]) -> Result<()> {
     let mut seen = HashSet::new();
     for e in entries {
         if e.id.trim().is_empty() {
-            return Err(ConnectorsError::Invalid("connector id must not be empty".into()));
+            return Err(ConnectorsError::Invalid(
+                "connector id must not be empty".into(),
+            ));
         }
         if e.name.trim().is_empty() {
-            return Err(ConnectorsError::Invalid(format!("connector {} has no name", e.id)));
+            return Err(ConnectorsError::Invalid(format!(
+                "connector {} has no name",
+                e.id
+            )));
         }
         if !seen.insert(e.id.clone()) {
-            return Err(ConnectorsError::Invalid(format!("duplicate connector '{}'", e.id)));
+            return Err(ConnectorsError::Invalid(format!(
+                "duplicate connector '{}'",
+                e.id
+            )));
         }
         match &e.url {
             Some(u) if !(u.starts_with("https://") || u.starts_with("http://localhost")) => {
@@ -277,7 +288,10 @@ impl ConnectorsGallery {
     }
 
     fn save_access(&self, store: &synapse_store::Store) -> Result<()> {
-        store.setting_set(KEY_AGENT_ACCESS, &serde_json::to_string(&self.agent_access)?)?;
+        store.setting_set(
+            KEY_AGENT_ACCESS,
+            &serde_json::to_string(&self.agent_access)?,
+        )?;
         Ok(())
     }
 
@@ -297,7 +311,9 @@ impl ConnectorsGallery {
             self.settings
                 .add(config)
                 .map_err(|e| ConnectorsError::Invalid(e.to_string()))?;
-            self.settings.save(store).map_err(|e| ConnectorsError::Invalid(e.to_string()))?;
+            self.settings
+                .save(store)
+                .map_err(|e| ConnectorsError::Invalid(e.to_string()))?;
         }
         Ok(())
     }
@@ -323,9 +339,15 @@ impl ConnectorsGallery {
     ) -> Result<ConnectionState> {
         let entry = self.require_entry(connector_id)?.clone();
         self.ensure_installed(store, &entry.id)?;
-        let config = self.settings.get(&entry.id).expect("installed").config.clone();
+        let config = self
+            .settings
+            .get(&entry.id)
+            .expect("installed")
+            .config
+            .clone();
         if config.requires_oauth() && secrets.get(&config.token_key_ref()).is_err() {
-            let code = auth_code.ok_or_else(|| ConnectorsError::SignInRequired(entry.id.clone()))?;
+            let code =
+                auth_code.ok_or_else(|| ConnectorsError::SignInRequired(entry.id.clone()))?;
             let (token, refresh) = flow
                 .exchange_code(&entry.id, code)
                 .map_err(|e| ConnectorsError::Invalid(e.to_string()))?;
@@ -375,11 +397,7 @@ impl ConnectorsGallery {
                     return ConnectionState::Error(format!("unknown connector: {connector_id}"));
                 }
             };
-            return crate::mcp_settings::connection_state(
-                &entry.to_server_config(),
-                false,
-                false,
-            );
+            return crate::mcp_settings::connection_state(&entry.to_server_config(), false, false);
         };
         let has_token = secrets.get(&slot.config.token_key_ref()).is_ok();
         crate::mcp_settings::connection_state(
@@ -391,15 +409,24 @@ impl ConnectorsGallery {
 
     /// Cached tools (populated by [`connect`](Self::connect)).
     pub fn tools(&self, connector_id: &str) -> Vec<ToolInfo> {
-        self.tool_cache.get(connector_id).cloned().unwrap_or_default()
+        self.tool_cache
+            .get(connector_id)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn read_tools(&self, connector_id: &str) -> Vec<ToolInfo> {
-        self.tools(connector_id).into_iter().filter(|t| t.read_only()).collect()
+        self.tools(connector_id)
+            .into_iter()
+            .filter(|t| t.read_only())
+            .collect()
     }
 
     pub fn write_tools(&self, connector_id: &str) -> Vec<ToolInfo> {
-        self.tools(connector_id).into_iter().filter(|t| !t.read_only()).collect()
+        self.tools(connector_id)
+            .into_iter()
+            .filter(|t| !t.read_only())
+            .collect()
     }
 
     /// Per-agent access: missing rules default to allowed.
@@ -438,12 +465,7 @@ impl ConnectorsGallery {
 
     /// Can `agent_id` run `tool` on this connector right now? Disabled
     /// agents and globally-disabled tools are rejected.
-    pub fn can_agent_call(
-        &self,
-        connector_id: &str,
-        agent_id: &str,
-        tool: &str,
-    ) -> bool {
+    pub fn can_agent_call(&self, connector_id: &str, agent_id: &str, tool: &str) -> bool {
         if !self.is_agent_allowed(connector_id, agent_id) {
             return false;
         }
@@ -470,7 +492,10 @@ impl ConnectorsGallery {
         let backend = factory.connect(connector_id)?;
         let out = backend.call_tool(tool, args).await?;
         let redacted = self.redactor.redact(&out.content);
-        *self.redact_counts.entry(connector_id.to_string()).or_insert(0) += redacted.count;
+        *self
+            .redact_counts
+            .entry(connector_id.to_string())
+            .or_insert(0) += redacted.count;
         Ok(redacted)
     }
 
@@ -485,11 +510,22 @@ impl ConnectorsGallery {
         let entry = self.require_entry(connector_id)?.clone();
         let state = self.connection_state(factory, secrets, connector_id);
         let tools = self.tools(connector_id);
-        let mut read_tools: Vec<String> = tools.iter().filter(|t| t.read_only()).map(|t| t.name.clone()).collect();
-        let mut write_tools: Vec<String> = tools.iter().filter(|t| !t.read_only()).map(|t| t.name.clone()).collect();
+        let mut read_tools: Vec<String> = tools
+            .iter()
+            .filter(|t| t.read_only())
+            .map(|t| t.name.clone())
+            .collect();
+        let mut write_tools: Vec<String> = tools
+            .iter()
+            .filter(|t| !t.read_only())
+            .map(|t| t.name.clone())
+            .collect();
         read_tools.sort();
         write_tools.sort();
-        let allowed = agent_ids.iter().filter(|a| self.is_agent_allowed(connector_id, a)).count();
+        let allowed = agent_ids
+            .iter()
+            .filter(|a| self.is_agent_allowed(connector_id, a))
+            .count();
         Ok(ConnectorCard {
             id: entry.id,
             name: entry.name,
@@ -525,15 +561,24 @@ impl ConnectorsGallery {
     /// Connectors for the onboarding "connect apps" step: a small,
     /// friendly subset (local-first + the most popular remotes).
     pub fn onboarding_picks(&self) -> Vec<&ConnectorEntry> {
-        const PICKS: &[&str] = &["filesystem", "github", "notion", "slack", "sqlite", "composio"];
+        const PICKS: &[&str] = &[
+            "filesystem",
+            "github",
+            "notion",
+            "slack",
+            "sqlite",
+            "composio",
+        ];
         PICKS.iter().filter_map(|id| self.entry(id)).collect()
     }
 
     pub fn test_summary(&self, connector_id: &str) -> Option<ServerTestOutcome> {
-        self.tool_cache.get(connector_id).map(|tools| ServerTestOutcome::Ok {
-            tools: tools.len(),
-            read_only: tools.iter().filter(|t| t.read_only()).count(),
-        })
+        self.tool_cache
+            .get(connector_id)
+            .map(|tools| ServerTestOutcome::Ok {
+                tools: tools.len(),
+                read_only: tools.iter().filter(|t| t.read_only()).count(),
+            })
     }
 }
 
@@ -569,15 +614,31 @@ mod connectors_tests {
         assert!(kinds.contains("Local"), "{kinds:?}");
         assert!(kinds.contains("Remote"), "{kinds:?}");
         assert!(kinds.contains("Aggregator"), "{kinds:?}");
-        assert!(catalog.len() >= 10, "expected a full gallery, got {}", catalog.len());
+        assert!(
+            catalog.len() >= 10,
+            "expected a full gallery, got {}",
+            catalog.len()
+        );
         // Every URL is verifiable (https); unverifiable entries were dropped.
         for e in &catalog {
             if let Some(u) = &e.url {
-                assert!(u.starts_with("https://") || u.starts_with("http://localhost"), "{}: {u}", e.id);
+                assert!(
+                    u.starts_with("https://") || u.starts_with("http://localhost"),
+                    "{}: {u}",
+                    e.id
+                );
             } else {
-                assert!(!e.command.as_deref().unwrap_or("").trim().is_empty(), "{} needs a command", e.id);
+                assert!(
+                    !e.command.as_deref().unwrap_or("").trim().is_empty(),
+                    "{} needs a command",
+                    e.id
+                );
             }
-            assert!(!e.reads.is_empty() || !e.writes.is_empty(), "{} needs capabilities", e.id);
+            assert!(
+                !e.reads.is_empty() || !e.writes.is_empty(),
+                "{} needs capabilities",
+                e.id
+            );
         }
         // Spot-check the headline connectors.
         for id in ["filesystem", "github", "notion", "composio"] {
@@ -585,7 +646,9 @@ mod connectors_tests {
         }
         // Invalid catalogs are rejected, never silently installed.
         assert!(parse_catalog(r#"[{"id":"","name":"x","kind":"local"}]"#).is_err());
-        assert!(parse_catalog(r#"[{"id":"a","name":"A","kind":"local","url":"ftp://x"}]"#).is_err());
+        assert!(
+            parse_catalog(r#"[{"id":"a","name":"A","kind":"local","url":"ftp://x"}]"#).is_err()
+        );
     }
 
     #[tokio::test]
@@ -595,7 +658,10 @@ mod connectors_tests {
         let factory = MockBackendFactory::new();
         factory.add_server(MockMcpServer::new(
             "filesystem",
-            vec![tool("read_file", Some(true)), tool("write_file", Some(false))],
+            vec![
+                tool("read_file", Some(true)),
+                tool("write_file", Some(false)),
+            ],
         ));
         let mut g = ConnectorsGallery::open(&store);
         let flow = FakeOAuthFlow::new();
@@ -603,16 +669,29 @@ mod connectors_tests {
         // Before install the card is Disconnected (never an error screen).
         let card = g.card(&factory, &secrets, "filesystem", &agents()).unwrap();
         assert_eq!(card.state, ConnectionState::Disconnected);
-        assert!(card.capabilities_line().contains("read"), "{}", card.capabilities_line());
+        assert!(
+            card.capabilities_line().contains("read"),
+            "{}",
+            card.capabilities_line()
+        );
 
         // One-click connect lists tools and splits read/write.
-        let state = g.connect(&store, &factory, &secrets, &flow, "filesystem", None).await.unwrap();
+        let state = g
+            .connect(&store, &factory, &secrets, &flow, "filesystem", None)
+            .await
+            .unwrap();
         assert_eq!(state, ConnectionState::Connected);
         assert_eq!(g.read_tools("filesystem").len(), 1);
         assert_eq!(g.write_tools("filesystem").len(), 1);
         // Write tools default to ask.
-        assert_eq!(tool_permission(&tool("write_file", Some(false))), ToolPermission::Ask);
-        assert_eq!(tool_permission(&tool("read_file", Some(true))), ToolPermission::AutoRun);
+        assert_eq!(
+            tool_permission(&tool("write_file", Some(false))),
+            ToolPermission::Ask
+        );
+        assert_eq!(
+            tool_permission(&tool("read_file", Some(true))),
+            ToolPermission::AutoRun
+        );
         let card = g.card(&factory, &secrets, "filesystem", &agents()).unwrap();
         assert_eq!(card.state, ConnectionState::Connected);
         assert_eq!(card.read_tools, vec!["read_file".to_string()]);
@@ -620,10 +699,15 @@ mod connectors_tests {
         assert_eq!(card.agents_allowed, 2);
 
         // Disconnect drops the connection but keeps the install.
-        let state = g.disconnect(&factory, &secrets, "filesystem", false).unwrap();
+        let state = g
+            .disconnect(&factory, &secrets, "filesystem", false)
+            .unwrap();
         assert_eq!(state, ConnectionState::Disconnected);
         assert!(g.is_installed("filesystem"));
-        assert!(g.connect(&store, &factory, &secrets, &flow, "nope", None).await.is_err());
+        assert!(g
+            .connect(&store, &factory, &secrets, &flow, "nope", None)
+            .await
+            .is_err());
     }
 
     #[tokio::test]
@@ -631,7 +715,10 @@ mod connectors_tests {
         let store = mem_store();
         let secrets = InMemorySecretStore::new();
         let factory = MockBackendFactory::new();
-        factory.add_server(MockMcpServer::new("github", vec![tool("search_issues", Some(true))]));
+        factory.add_server(MockMcpServer::new(
+            "github",
+            vec![tool("search_issues", Some(true))],
+        ));
         let mut g = ConnectorsGallery::open(&store);
         let flow = FakeOAuthFlow::new();
 
@@ -640,22 +727,52 @@ mod connectors_tests {
         assert!(url.contains("github"), "{url}");
 
         // Without a code the gallery asks for sign-in instead of failing silently.
-        let err = g.connect(&store, &factory, &secrets, &flow, "github", None).await.unwrap_err();
+        let err = g
+            .connect(&store, &factory, &secrets, &flow, "github", None)
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("sign-in"), "{err}");
 
         // Wrong code is rejected; the right fake code connects and stores the token.
-        assert!(g.connect(&store, &factory, &secrets, &flow, "github", Some("bogus")).await.is_err());
-        let state = g.connect(&store, &factory, &secrets, &flow, "github", Some("code-github")).await.unwrap();
+        assert!(g
+            .connect(&store, &factory, &secrets, &flow, "github", Some("bogus"))
+            .await
+            .is_err());
+        let state = g
+            .connect(
+                &store,
+                &factory,
+                &secrets,
+                &flow,
+                "github",
+                Some("code-github"),
+            )
+            .await
+            .unwrap();
         assert_eq!(state, ConnectionState::Connected);
         // Token lives only in the secret store, never in the DB.
-        assert_eq!(secrets.test_value("mcp-oauth:github").as_deref(), Some("token-for-github"));
-        let raw = store.setting_get("mcp.servers").unwrap().unwrap_or_default();
+        assert_eq!(
+            secrets.test_value("mcp-oauth:github").as_deref(),
+            Some("token-for-github")
+        );
+        let raw = store
+            .setting_get("mcp.servers")
+            .unwrap()
+            .unwrap_or_default();
         assert!(!raw.contains("token-for-github"), "{raw}");
-        assert!(g.card(&factory, &secrets, "github", &agents()).unwrap().state == ConnectionState::Connected);
+        assert!(
+            g.card(&factory, &secrets, "github", &agents())
+                .unwrap()
+                .state
+                == ConnectionState::Connected
+        );
 
         // Disconnect keeps the token (reconnect needs no new code); forget drops it.
         g.disconnect(&factory, &secrets, "github", false).unwrap();
-        let state = g.connect(&store, &factory, &secrets, &flow, "github", None).await.unwrap();
+        let state = g
+            .connect(&store, &factory, &secrets, &flow, "github", None)
+            .await
+            .unwrap();
         assert_eq!(state, ConnectionState::Connected);
         g.disconnect(&factory, &secrets, "github", true).unwrap();
         assert!(secrets.test_value("mcp-oauth:github").is_none());
@@ -668,18 +785,31 @@ mod connectors_tests {
         let factory = MockBackendFactory::new();
         factory.add_server(MockMcpServer::new(
             "notion",
-            vec![tool("read_page", Some(true)), tool("update_page", Some(false))],
+            vec![
+                tool("read_page", Some(true)),
+                tool("update_page", Some(false)),
+            ],
         ));
         let mut g = ConnectorsGallery::open(&store);
         let flow = FakeOAuthFlow::new();
-        g.connect(&store, &factory, &secrets, &flow, "notion", Some("code-notion")).await.unwrap();
+        g.connect(
+            &store,
+            &factory,
+            &secrets,
+            &flow,
+            "notion",
+            Some("code-notion"),
+        )
+        .await
+        .unwrap();
 
         // Everyone allowed by default.
         assert!(g.is_agent_allowed("notion", "ada"));
         assert!(g.can_agent_call("notion", "ada", "read_page"));
 
         // Deny one agent: card counts it, calls are gated, others unaffected.
-        g.set_agent_allowed(&store, "notion", "mira", false).unwrap();
+        g.set_agent_allowed(&store, "notion", "mira", false)
+            .unwrap();
         assert!(!g.is_agent_allowed("notion", "mira"));
         assert!(!g.can_agent_call("notion", "mira", "read_page"));
         assert!(g.can_agent_call("notion", "ada", "read_page"));
@@ -703,26 +833,44 @@ mod connectors_tests {
         let secrets = InMemorySecretStore::new();
         let factory = MockBackendFactory::new();
         // The mock echoes args back, so the fake key would leak without redaction.
-        factory.add_server(MockMcpServer::new("sqlite", vec![tool("query", Some(true))]));
+        factory.add_server(MockMcpServer::new(
+            "sqlite",
+            vec![tool("query", Some(true))],
+        ));
         let mut g = ConnectorsGallery::open(&store);
         for (name, value) in fixtures::all() {
             g.add_known_secret(name, value);
         }
         let flow = FakeOAuthFlow::new();
-        g.connect(&store, &factory, &secrets, &flow, "sqlite", None).await.unwrap();
+        g.connect(&store, &factory, &secrets, &flow, "sqlite", None)
+            .await
+            .unwrap();
 
         for (_, secret) in fixtures::all() {
             let args = serde_json::json!({"sql": "select 1", "note": secret});
-            let out: Redacted = g.call_tool_redacted(&factory, "sqlite", "query", args).await.unwrap();
-            assert!(!out.text.contains(secret), "leaked {secret:?} in {:?}", out.text);
+            let out: Redacted = g
+                .call_tool_redacted(&factory, "sqlite", "query", args)
+                .await
+                .unwrap();
+            assert!(
+                !out.text.contains(secret),
+                "leaked {secret:?} in {:?}",
+                out.text
+            );
             assert!(out.count >= 1, "nothing redacted for {secret:?}");
             assert!(out.text.contains("[redacted:"), "{}", out.text);
         }
         // The card reports redactions; unknown tools error cleanly.
         let card = g.card(&factory, &secrets, "sqlite", &agents()).unwrap();
         assert!(card.redacted_count >= fixtures::all().len(), "{card:?}");
-        assert!(g.call_tool_redacted(&factory, "sqlite", "missing_tool", serde_json::json!({})).await.is_err());
-        assert!(g.call_tool_redacted(&factory, "nope", "query", serde_json::json!({})).await.is_err());
+        assert!(g
+            .call_tool_redacted(&factory, "sqlite", "missing_tool", serde_json::json!({}))
+            .await
+            .is_err());
+        assert!(g
+            .call_tool_redacted(&factory, "nope", "query", serde_json::json!({}))
+            .await
+            .is_err());
     }
 
     #[test]

@@ -62,8 +62,7 @@ fn oauth_config(id: &str) -> McpServerConfig {
 }
 
 fn tmp_root(name: &str) -> std::path::PathBuf {
-    let dir =
-        std::env::temp_dir().join(format!("synapse-m06-{name}-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("synapse-m06-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join("files")).unwrap();
     std::fs::canonicalize(&dir).unwrap_or(dir)
@@ -131,7 +130,9 @@ fn m06_project_file_write_preview_and_escape_rejection() {
     std::fs::write(root.join("files/notes.md"), "hello\n").unwrap();
 
     // Preview shows a unified diff before anything is written.
-    let pending = scope.plan_write("files/notes.md", "hello\nworld\n").unwrap();
+    let pending = scope
+        .plan_write("files/notes.md", "hello\nworld\n")
+        .unwrap();
     assert!(pending.needs_approval);
     assert!(pending.diff.contains("+world"));
     assert_eq!(scope.read_file("files/notes.md").unwrap(), "hello\n");
@@ -150,9 +151,7 @@ fn m06_project_file_write_preview_and_escape_rejection() {
     let abs_outside = std::env::temp_dir()
         .join("synapse-m06-elsewhere")
         .join("secret.md");
-    assert!(scope
-        .read_file(&abs_outside.to_string_lossy())
-        .is_err());
+    assert!(scope.read_file(&abs_outside.to_string_lossy()).is_err());
     assert!(scope.list_files("..").is_err());
 }
 
@@ -191,9 +190,7 @@ fn m06_shell_disabled_by_default() {
     ));
 
     // Allowed command runs offline (plain echo, no network).
-    let out = on
-        .run_checked(&allow, &req, "echo hello-m06")
-        .expect("run");
+    let out = on.run_checked(&allow, &req, "echo hello-m06").expect("run");
     assert_eq!(out.stdout.trim(), "hello-m06");
     assert_eq!(out.exit_code, 0);
     assert!(!out.timed_out);

@@ -65,7 +65,9 @@ pub struct McpSettings {
 impl McpSettings {
     pub fn load(store: &synapse_store::Store) -> Result<Self> {
         let raw = store.setting_get(KEY_SERVERS)?;
-        let Some(raw) = raw else { return Ok(Self::default()) };
+        let Some(raw) = raw else {
+            return Ok(Self::default());
+        };
         if raw.trim().is_empty() {
             return Ok(Self::default());
         }
@@ -136,12 +138,7 @@ impl McpSettings {
 
     /// Per-tool toggle (Settings → MCP → tool switch). `None` tool state
     /// means enabled; storing `true` explicitly is normalised away.
-    pub fn set_tool_enabled(
-        &mut self,
-        server_id: &str,
-        tool: &str,
-        enabled: bool,
-    ) -> Result<()> {
+    pub fn set_tool_enabled(&mut self, server_id: &str, tool: &str, enabled: bool) -> Result<()> {
         let slot = self
             .get_mut(server_id)
             .ok_or_else(|| McpSettingsError::UnknownServer(server_id.into()))?;
@@ -210,10 +207,14 @@ impl McpSettings {
 /// A server config is usable when it names a command or an http(s) URL.
 pub fn validate_config(config: &McpServerConfig) -> Result<()> {
     if config.id.trim().is_empty() {
-        return Err(McpSettingsError::Invalid("server id must not be empty".into()));
+        return Err(McpSettingsError::Invalid(
+            "server id must not be empty".into(),
+        ));
     }
     if config.name.trim().is_empty() {
-        return Err(McpSettingsError::Invalid("server name must not be empty".into()));
+        return Err(McpSettingsError::Invalid(
+            "server name must not be empty".into(),
+        ));
     }
     match &config.transport {
         Transport::Stdio { command, .. } => {
@@ -735,9 +736,10 @@ impl McpSettingsScreen {
 
     /// Save the drafts onto the selected server and persist.
     pub fn submit_edit(&mut self, store: &synapse_store::Store) -> Result<()> {
-        let id = self.selected.clone().ok_or_else(|| {
-            McpSettingsError::Invalid("select a server first".into())
-        })?;
+        let id = self
+            .selected
+            .clone()
+            .ok_or_else(|| McpSettingsError::Invalid("select a server first".into()))?;
         let current = self
             .settings
             .get(&id)
@@ -893,11 +895,8 @@ impl McpSettingsScreen {
             })
             .map(|s| {
                 let has_token = secrets.get(&s.config.token_key_ref()).is_ok();
-                let state = connection_state(
-                    &s.config,
-                    self.connected.contains(&s.config.id),
-                    has_token,
-                );
+                let state =
+                    connection_state(&s.config, self.connected.contains(&s.config.id), has_token);
                 let state = if let Some(err) = self.last_error.get(&s.config.id) {
                     match &state {
                         ConnectionState::Connected => state,
@@ -914,11 +913,7 @@ impl McpSettingsScreen {
                     transport_label: transport_label(&s.config.transport),
                     state,
                     tool_count: self.tool_counts.get(&s.config.id).copied(),
-                    disabled_tools: s
-                        .tool_toggles
-                        .values()
-                        .filter(|v| !**v)
-                        .count(),
+                    disabled_tools: s.tool_toggles.values().filter(|v| !**v).count(),
                 }
             })
             .collect();
@@ -969,11 +964,13 @@ impl McpSettingsScreen {
             }
         } else {
             self.connected.remove(server_id);
-            self.last_error
-                .insert(server_id.to_string(), match &out {
+            self.last_error.insert(
+                server_id.to_string(),
+                match &out {
                     ServerTestOutcome::Failed { reason } => reason.clone(),
                     ServerTestOutcome::Ok { .. } => String::new(),
-                });
+                },
+            );
         }
         self.set_status(out.ok(), out.user_message());
         out
@@ -1031,9 +1028,7 @@ mod mcp_settings_tests {
             name: name.into(),
             description: format!("{name} tool"),
             input_schema: serde_json::json!({"type": "object"}),
-            annotations: ToolAnnotations {
-                read_only,
-            },
+            annotations: ToolAnnotations { read_only },
         }
     }
 
@@ -1086,9 +1081,7 @@ mod mcp_settings_tests {
         assert_eq!(again.servers.len(), 1);
 
         // Edit keeps toggles; enable/disable flips the flag.
-        again
-            .set_tool_enabled("fs", "read_file", false)
-            .unwrap();
+        again.set_tool_enabled("fs", "read_file", false).unwrap();
         again
             .update(McpServerConfig {
                 id: "fs".into(),
@@ -1109,7 +1102,14 @@ mod mcp_settings_tests {
         assert!(again.set_enabled("missing", true).is_err());
         assert!(again.update(stdio("missing", "M", "c")).is_err());
         again.save(&store).unwrap();
-        assert!(!McpSettings::load(&store).unwrap().get("fs").unwrap().config.enabled);
+        assert!(
+            !McpSettings::load(&store)
+                .unwrap()
+                .get("fs")
+                .unwrap()
+                .config
+                .enabled
+        );
 
         // Remove drops the row.
         let removed = again.remove("fs").unwrap();
@@ -1151,10 +1151,14 @@ mod mcp_settings_tests {
 
         let store = mem_store();
         let mut s = McpSettings::default();
-        let id = s.install(reg.iter().find(|e| e.id == "filesystem").unwrap()).unwrap();
+        let id = s
+            .install(reg.iter().find(|e| e.id == "filesystem").unwrap())
+            .unwrap();
         assert_eq!(id, "filesystem");
         // Installing twice renames instead of colliding.
-        let id2 = s.install(reg.iter().find(|e| e.id == "filesystem").unwrap()).unwrap();
+        let id2 = s
+            .install(reg.iter().find(|e| e.id == "filesystem").unwrap())
+            .unwrap();
         assert_ne!(id2, "filesystem");
         s.save(&store).unwrap();
         assert_eq!(McpSettings::load(&store).unwrap().servers.len(), 2);
@@ -1259,13 +1263,22 @@ mod mcp_settings_tests {
     async fn mcp_settings_test_lists_tools_and_reports_counts() {
         let factory = factory_with(
             "fs",
-            vec![tool("read_file", Some(true)), tool("write_file", Some(false))],
+            vec![
+                tool("read_file", Some(true)),
+                tool("write_file", Some(false)),
+            ],
         );
         let secrets = InMemorySecretStore::new();
         let cfg = stdio("fs", "Filesystem", "npx");
         let out = test_server(&cfg, &factory, &secrets, &HashMap::new()).await;
         assert!(out.ok(), "{out:?}");
-        assert_eq!(out, ServerTestOutcome::Ok { tools: 2, read_only: 1 });
+        assert_eq!(
+            out,
+            ServerTestOutcome::Ok {
+                tools: 2,
+                read_only: 1
+            }
+        );
         assert!(out.user_message().contains("2 tool(s)"));
 
         // Unknown server (no backend) fails with a trimmed reason.
@@ -1277,7 +1290,9 @@ mod mcp_settings_tests {
         // Disabled / invalid configs fail without touching the transport.
         let mut disabled = stdio("fs", "FS", "npx");
         disabled.enabled = false;
-        assert!(!test_server(&disabled, &factory, &secrets, &HashMap::new()).await.ok());
+        assert!(!test_server(&disabled, &factory, &secrets, &HashMap::new())
+            .await
+            .ok());
         let bad = McpServerConfig {
             id: "bad".into(),
             name: "Bad".into(),
@@ -1288,7 +1303,9 @@ mod mcp_settings_tests {
             enabled: true,
             oauth: None,
         };
-        assert!(!test_server(&bad, &factory, &secrets, &HashMap::new()).await.ok());
+        assert!(!test_server(&bad, &factory, &secrets, &HashMap::new())
+            .await
+            .ok());
     }
 
     #[tokio::test]
@@ -1297,7 +1314,10 @@ mod mcp_settings_tests {
         let secrets = InMemorySecretStore::new();
         let factory = factory_with(
             "my-server",
-            vec![tool("read_notes", Some(true)), tool("delete_notes", Some(false))],
+            vec![
+                tool("read_notes", Some(true)),
+                tool("delete_notes", Some(false)),
+            ],
         );
         let mut screen = McpSettingsScreen::open(&store);
         assert!(screen.status().is_none());
@@ -1321,7 +1341,10 @@ mod mcp_settings_tests {
         let row = &screen.rows(&secrets)[0];
         assert_eq!(row.transport_label, "npx -y x-mcp");
         assert_eq!(row.state, ConnectionState::Disconnected);
-        assert!(row.state.user_message("My Server").contains("not connected"));
+        assert!(row
+            .state
+            .user_message("My Server")
+            .contains("not connected"));
 
         // Select pre-fills drafts; edit switches to a URL transport.
         screen.select("my-server").unwrap();
@@ -1346,10 +1369,14 @@ mod mcp_settings_tests {
         assert_eq!(row.tool_count, Some(2));
 
         // Per-tool toggle persists and shows on the row.
-        screen.toggle_tool(&store, "my-server", "delete_notes", false).unwrap();
+        screen
+            .toggle_tool(&store, "my-server", "delete_notes", false)
+            .unwrap();
         assert!(screen.status_ok());
         assert_eq!(screen.rows(&secrets)[0].disabled_tools, 1);
-        screen.toggle_tool(&store, "my-server", "delete_notes", true).unwrap();
+        screen
+            .toggle_tool(&store, "my-server", "delete_notes", true)
+            .unwrap();
         assert_eq!(screen.rows(&secrets)[0].disabled_tools, 0);
         assert!(screen.toggle_tool(&store, "missing", "x", false).is_err());
         assert!(!screen.status_ok());

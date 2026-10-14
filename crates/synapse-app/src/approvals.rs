@@ -65,9 +65,17 @@ impl ApprovalCard {
     /// One-line title, e.g. "Ada wants to run `cargo test`".
     pub fn title(&self) -> String {
         match self.tool.as_str() {
-            "shell" => format!("{} wants to run `{}`", self.agent_id, preview_head(&self.preview, 80)),
+            "shell" => format!(
+                "{} wants to run `{}`",
+                self.agent_id,
+                preview_head(&self.preview, 80)
+            ),
             "write_file" | "edit_file" => {
-                format!("{} wants to write {}", self.agent_id, preview_head(&self.preview, 80))
+                format!(
+                    "{} wants to write {}",
+                    self.agent_id,
+                    preview_head(&self.preview, 80)
+                )
             }
             _ => format!("{} wants to call {}", self.agent_id, self.tool),
         }
@@ -233,7 +241,12 @@ impl ApprovalsCenter {
             entry.result_summary = summary.into();
             if is_error {
                 entry.outcome = AuditOutcome::Error(summary.into());
-            } else if matches!(entry.outcome, AuditOutcome::ApprovedOnce | AuditOutcome::AlwaysAllowed | AuditOutcome::AutoAllowed) {
+            } else if matches!(
+                entry.outcome,
+                AuditOutcome::ApprovedOnce
+                    | AuditOutcome::AlwaysAllowed
+                    | AuditOutcome::AutoAllowed
+            ) {
                 entry.outcome = AuditOutcome::Done;
             }
             return true;
@@ -291,7 +304,9 @@ impl ApprovalsCenter {
                         "denied" => AuditOutcome::Denied,
                         "auto_allowed" => AuditOutcome::AutoAllowed,
                         "done" => AuditOutcome::Done,
-                        s if s.starts_with("error") => AuditOutcome::Error(r.result_summary.clone()),
+                        s if s.starts_with("error") => {
+                            AuditOutcome::Error(r.result_summary.clone())
+                        }
                         _ => AuditOutcome::Pending,
                     },
                     approved_by: r.approved_by,
@@ -323,7 +338,11 @@ pub fn preview_for(tool: &str, args_redacted: &str) -> String {
                 .get("path")
                 .and_then(|v| v.as_str())
                 .unwrap_or("(unknown path)");
-            let old = parsed.get("old").or_else(|| parsed.get("before")).and_then(|v| v.as_str()).unwrap_or("");
+            let old = parsed
+                .get("old")
+                .or_else(|| parsed.get("before"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let new = parsed
                 .get("content")
                 .or_else(|| parsed.get("new"))
@@ -419,7 +438,11 @@ mod approvals_tests {
             )
             .expect("card");
         let card = c.pending().iter().find(|x| x.id == id).unwrap();
-        assert!(card.preview.contains("cargo test -p synapse-app"), "{}", card.preview);
+        assert!(
+            card.preview.contains("cargo test -p synapse-app"),
+            "{}",
+            card.preview
+        );
         assert_eq!(c.pending_count(), 1);
         // Approve once resolves and audits the outcome.
         let out = c.decide(&id, ApprovalChoice::ApproveOnce, "user").unwrap();
@@ -449,7 +472,10 @@ mod approvals_tests {
         let id3 = c
             .request("ada", "shell", r##"{"command": "rm -rf /tmp/x"}"##, &r)
             .expect("card");
-        assert_eq!(c.decide(&id3, ApprovalChoice::Deny, "user").unwrap(), AuditOutcome::Denied);
+        assert_eq!(
+            c.decide(&id3, ApprovalChoice::Deny, "user").unwrap(),
+            AuditOutcome::Denied
+        );
         assert_eq!(
             c.audit_filtered("shell").len(),
             2,
@@ -465,8 +491,16 @@ mod approvals_tests {
         let args = format!(r##"{{"command": "deploy", "key": "{secret}"}}"##);
         let id = c.request("ada", "shell", &args, &r).expect("card");
         let card = c.pending().iter().find(|x| x.id == id).unwrap();
-        assert!(!card.args_redacted.contains(secret), "{}", card.args_redacted);
-        assert!(card.args_redacted.contains("[redacted:"), "{}", card.args_redacted);
+        assert!(
+            !card.args_redacted.contains(secret),
+            "{}",
+            card.args_redacted
+        );
+        assert!(
+            card.args_redacted.contains("[redacted:"),
+            "{}",
+            card.args_redacted
+        );
         assert!(card.redacted_count >= 1);
         c.decide(&id, ApprovalChoice::ApproveOnce, "user");
         assert!(c.record_result(&id, "exit 0", false));
@@ -475,10 +509,15 @@ mod approvals_tests {
         assert_eq!(entry.result_summary, "exit 0");
         assert!(!entry.args_redacted.contains(secret));
         // Error outcome keeps the message.
-        let id2 = c.request("ada", "shell", r##"{"command": "x"}"##, &r).expect("card");
+        let id2 = c
+            .request("ada", "shell", r##"{"command": "x"}"##, &r)
+            .expect("card");
         c.decide(&id2, ApprovalChoice::ApproveOnce, "user");
         assert!(c.record_result(&id2, "boom", true));
-        assert!(matches!(c.audit().iter().find(|e| e.id == id2).unwrap().outcome, AuditOutcome::Error(_)));
+        assert!(matches!(
+            c.audit().iter().find(|e| e.id == id2).unwrap().outcome,
+            AuditOutcome::Error(_)
+        ));
     }
 
     #[test]
@@ -486,11 +525,21 @@ mod approvals_tests {
         let mut c = ApprovalsCenter::new();
         let r = redactor();
         let id = c
-            .request("ada", "write_file", r##"{"path": "reports/a.md", "content": "hi"}"##, &r)
+            .request(
+                "ada",
+                "write_file",
+                r##"{"path": "reports/a.md", "content": "hi"}"##,
+                &r,
+            )
             .expect("card");
         c.decide(&id, ApprovalChoice::AlwaysAllow, "user");
         // Same tool+path auto-approves next time (no new card) and is audited.
-        let auto = c.request("ada", "write_file", r##"{"path": "reports/a.md", "content": "v2"}"##, &r);
+        let auto = c.request(
+            "ada",
+            "write_file",
+            r##"{"path": "reports/a.md", "content": "v2"}"##,
+            &r,
+        );
         assert!(auto.is_none(), "always-allow should auto-run");
         assert_eq!(c.audit().last().unwrap().outcome, AuditOutcome::AutoAllowed);
 
@@ -508,7 +557,8 @@ mod approvals_tests {
         let n = approval_notification(&card, WindowVisibility::Hidden).expect("notify hidden");
         assert_eq!(n.title, "Approval needed");
         assert!(n.body.contains("ada"));
-        let n2 = approval_notification(&card, WindowVisibility::Destroyed).expect("notify destroyed");
+        let n2 =
+            approval_notification(&card, WindowVisibility::Destroyed).expect("notify destroyed");
         assert!(n2.body.contains("ada"));
     }
 

@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Pre-render DiceBear avatar packs into assets/avatars/<style>/ (dev-only).
+# Uses the DiceBear CLI via npx at build time; never at runtime.
+# At runtime GPUI renders the SVGs as full-colour images with the same state
+# animations as the blob (docs/UI.md §4).
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+OUT="$ROOT/assets/avatars"
+SEEDS=(ada grace mira theo june kai nova rex lena otto pip sol)
+STYLES=(notionists lorelei open-peeps thumbs shapes moods critters pixel-art pixelbot voxel-bot glass rings marbles planets clay blobs bottts avataaars fun-emoji adventurer big-smile croodles micah personas toon-head)
+mkdir -p "$OUT"
+for style in "${STYLES[@]}"; do
+  mkdir -p "$OUT/$style"
+  for seed in "${SEEDS[@]}"; do
+    if [ ! -f "$OUT/$style/$seed.svg" ]; then
+      npx --yes @dicebear/cli@9 to-svg "$style" --seed "$seed" --output "$OUT/$style/$seed.svg"
+    fi
+  done
+done
+echo "wrote ${#STYLES[@]} styles x ${#SEEDS[@]} seeds to $OUT (see manifest.json, CREDITS.md)"

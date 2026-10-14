@@ -3,6 +3,7 @@
 pub mod agent_editor;
 pub mod app_dirs;
 pub mod avatar;
+pub mod avatar_packs;
 pub mod chat_view;
 pub mod empty;
 pub mod icons;

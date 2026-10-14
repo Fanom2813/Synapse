@@ -7,6 +7,7 @@ pub mod bus;
 pub mod orchestrator;
 pub mod projects;
 pub mod redact;
+pub mod agent_builder;
 pub mod skills;
 pub mod team_tools;
 pub mod worker;

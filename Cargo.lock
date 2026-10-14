@@ -7619,9 +7619,11 @@ dependencies = [
  "synapse-app",
  "synapse-core",
  "synapse-llm",
+ "synapse-mcp",
  "synapse-personas",
  "synapse-research",
  "synapse-store",
+ "synapse-tools",
  "tokio",
  "tokio-util",
 ]

@@ -48,4 +48,4 @@ depends = []
 [nsis]
 
 [wix]
-languages = ["English"]
+languages = ["en-US"]

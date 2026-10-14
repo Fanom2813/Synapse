@@ -2,6 +2,7 @@
 
 pub mod agents;
 pub mod bus;
+pub mod orchestrator;
 pub mod projects;
 pub mod redact;
 pub mod skills;
@@ -15,6 +16,11 @@ pub use agents::{
 pub use bus::{
     AttachmentRef, BusError, Envelope, Event, Kind, Participant, Priority, Recipients, SourceRef,
     TeamBus, Usage, BROADCAST_CAPACITY, INBOX_CAPACITY,
+};
+pub use orchestrator::{
+    convergence_status, is_parallel_phase, phases_for_mode, select_speaker, BudgetEvent,
+    BudgetLedger, Convergence, RunLimits, RunMode, RunPhase, RunSnapshot, RunState, RunStatus,
+    SpeakerDecision,
 };
 pub use projects::{
     builtin_template, builtin_templates, validate_project, Project, ProjectDraft, ProjectStore,

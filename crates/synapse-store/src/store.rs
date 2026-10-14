@@ -10,7 +10,9 @@ use std::time::Duration;
 use rusqlite::{params, Connection, OptionalExtension};
 use thiserror::Error;
 
-use crate::models::{Agent, Conversation, Message, NewAgent, NewMessage, NewProject, Project};
+use crate::models::{
+    Agent, Conversation, Message, NewAgent, NewMessage, NewProject, NewSkill, Project, Skill,
+};
 use crate::schema::migrations;
 
 #[derive(Debug, Error)]
@@ -326,6 +328,133 @@ impl Store {
             let rows: Vec<_> = st.query_map(params![query, limit], row_to_message)?.collect::<std::result::Result<Vec<_>, _>>()?; Ok(rows)
         })
     }
+
+    // -- skills -----------------------------------------------------------
+    pub fn create_skill(&self, s: &NewSkill) -> Result<Skill> {
+        self.with_writer(|c| {
+            c.execute(
+                "INSERT INTO skills (id,name,description,body,license,repo,sha,path,local_path) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+                params![s.id, s.name, s.description, s.body, s.license, s.repo, s.sha, s.path, s.local_path],
+            )?;
+            get_skill_inner(c, &s.id)
+        })
+    }
+
+    pub fn get_skill(&self, id: &str) -> Result<Skill> {
+        self.with_reader(|c| get_skill_inner(c, id))
+    }
+
+    pub fn get_skill_by_name(&self, name: &str) -> Result<Skill> {
+        self.with_reader(|c| {
+            c.query_row(
+                "SELECT id,name,description,body,license,repo,sha,path,local_path,updated_at,created_at FROM skills WHERE name=?1",
+                params![name],
+                row_to_skill,
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::NotFound("skill", name.into()))
+        })
+    }
+
+    pub fn list_skills(&self) -> Result<Vec<Skill>> {
+        self.with_reader(|c| {
+            let mut st = c.prepare("SELECT id,name,description,body,license,repo,sha,path,local_path,updated_at,created_at FROM skills ORDER BY name")?;
+            let rows: Vec<_> = st.query_map([], row_to_skill)?.collect::<std::result::Result<Vec<_>, _>>()?; Ok(rows)
+        })
+    }
+
+    pub fn update_skill_body(
+        &self,
+        id: &str,
+        description: &str,
+        body: &str,
+        sha: &str,
+    ) -> Result<Skill> {
+        self.with_writer(|c| {
+            let n = c.execute(
+                "UPDATE skills SET description=?1, body=?2, sha=?3, updated_at=strftime('%s','now') WHERE id=?4",
+                params![description, body, sha, id],
+            )?;
+            if n == 0 {
+                return Err(StoreError::NotFound("skill", id.into()));
+            }
+            get_skill_inner(c, id)
+        })
+    }
+
+    pub fn delete_skill(&self, id: &str) -> Result<()> {
+        self.with_writer(|c| {
+            c.execute("DELETE FROM skills WHERE id=?1", params![id])?;
+            Ok(())
+        })
+    }
+
+    /// Set enablement of a skill at a scope (`global`/`project`/`agent`).
+    pub fn set_skill_enabled(
+        &self,
+        skill_id: &str,
+        scope: &str,
+        scope_id: &str,
+        enabled: bool,
+    ) -> Result<()> {
+        if !matches!(scope, "global" | "project" | "agent") {
+            return Err(StoreError::NotFound("skill scope", scope.into()));
+        }
+        let scope_id = if scope == "global" { "" } else { scope_id };
+        self.with_writer(|c| {
+            get_skill_inner(c, skill_id)?;
+            c.execute(
+                "INSERT INTO skill_states (skill_id, scope, scope_id, enabled) VALUES (?1,?2,?3,?4) ON CONFLICT(skill_id,scope,scope_id) DO UPDATE SET enabled=excluded.enabled",
+                params![skill_id, scope, scope_id, enabled as i32],
+            )?;
+            Ok(())
+        })
+    }
+
+    /// Raw enablement rows for one skill: `(scope, scope_id, enabled)`.
+    pub fn skill_states(&self, skill_id: &str) -> Result<Vec<(String, String, bool)>> {
+        self.with_reader(|c| {
+            let mut st = c.prepare(
+                "SELECT scope, scope_id, enabled FROM skill_states WHERE skill_id=?1 ORDER BY scope, scope_id",
+            )?;
+            let rows: Vec<_> = st
+                .query_map(params![skill_id], |r| {
+                    let scope: String = r.get(0)?;
+                    let scope_id: String = r.get(1)?;
+                    let enabled: i64 = r.get(2)?;
+                    Ok((scope, scope_id, enabled != 0))
+                })?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+    }
+
+    /// Skills enabled for an agent in a project: any matching `global`,
+    /// `project(project_id)` or `agent(agent_id)` row with `enabled=1`.
+    /// Rows explicitly set to `enabled=0` at any matching scope hide the skill.
+    pub fn enabled_skills(&self, project_id: &str, agent_id: &str) -> Result<Vec<Skill>> {
+        self.with_reader(|c| {
+            let mut st = c.prepare(
+                "SELECT s.id,s.name,s.description,s.body,s.license,s.repo,s.sha,s.path,s.local_path,s.updated_at,s.created_at
+                 FROM skills s JOIN skill_states st ON st.skill_id=s.id AND st.enabled=1
+                 WHERE (st.scope='global') OR (st.scope='project' AND st.scope_id=?1) OR (st.scope='agent' AND st.scope_id=?2)
+                 GROUP BY s.id ORDER BY s.name",
+            )?;
+            // Negative overrides: exclude skills disabled at any visible scope.
+            let mut st2 = c.prepare(
+                "SELECT skill_id FROM skill_states WHERE enabled=0 AND ((scope='global') OR (scope='project' AND scope_id=?1) OR (scope='agent' AND scope_id=?2))",
+            )?;
+            let hidden: std::collections::HashSet<String> = st2
+                .query_map(params![project_id, agent_id], |r| r.get(0))?
+                .collect::<std::result::Result<Vec<String>, _>>()?
+                .into_iter()
+                .collect();
+            let rows: Vec<Skill> = st
+                .query_map(params![project_id, agent_id], row_to_skill)?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            Ok(rows.into_iter().filter(|s| !hidden.contains(&s.id)).collect())
+        })
+    }
 }
 
 fn open_conn(path: &Path) -> Result<Connection> {
@@ -368,6 +497,32 @@ fn row_to_agent(r: &rusqlite::Row<'_>) -> rusqlite::Result<Agent> {
         persona_source: r.get(8)?,
         created_at: r.get(9)?,
     })
+}
+
+fn row_to_skill(r: &rusqlite::Row<'_>) -> rusqlite::Result<Skill> {
+    Ok(Skill {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        description: r.get(2)?,
+        body: r.get(3)?,
+        license: r.get(4)?,
+        repo: r.get(5)?,
+        sha: r.get(6)?,
+        path: r.get(7)?,
+        local_path: r.get(8)?,
+        updated_at: r.get(9)?,
+        created_at: r.get(10)?,
+    })
+}
+
+fn get_skill_inner(c: &Connection, id: &str) -> Result<Skill> {
+    c.query_row(
+        "SELECT id,name,description,body,license,repo,sha,path,local_path,updated_at,created_at FROM skills WHERE id=?1",
+        params![id],
+        row_to_skill,
+    )
+    .optional()?
+    .ok_or_else(|| StoreError::NotFound("skill", id.into()))
 }
 
 fn row_to_message(r: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {

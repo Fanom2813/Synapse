@@ -3,7 +3,7 @@
 use rusqlite_migration::{Migrations, M};
 
 pub fn migrations() -> Migrations<'static> {
-    Migrations::new(vec![M::up(SCHEMA_V1)])
+    Migrations::new(vec![M::up(SCHEMA_V1), M::up(SCHEMA_V2)])
 }
 
 /// Initial schema: full table set from ARCHITECTURE.md §3.
@@ -187,4 +187,28 @@ CREATE TRIGGER messages_au AFTER UPDATE ON messages BEGIN
     INSERT INTO messages_fts(messages_fts, rowid, body) VALUES ('delete', old.rowid, old.body);
     INSERT INTO messages_fts(rowid, body) VALUES (new.rowid, new.body);
 END;
+"#;
+/// V2: skill library (global / project / agent scopes).
+const SCHEMA_V2: &str = r#"
+CREATE TABLE skills (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL DEFAULT '',
+    license TEXT NOT NULL DEFAULT '',
+    repo TEXT NOT NULL DEFAULT '',
+    sha TEXT NOT NULL DEFAULT '',
+    path TEXT NOT NULL DEFAULT '',
+    local_path TEXT NOT NULL DEFAULT '',
+    updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+);
+CREATE TABLE skill_states (
+    skill_id TEXT NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+    scope TEXT NOT NULL DEFAULT 'global',
+    scope_id TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (skill_id, scope, scope_id)
+);
+CREATE INDEX idx_skill_states_scope ON skill_states(scope, scope_id);
 "#;

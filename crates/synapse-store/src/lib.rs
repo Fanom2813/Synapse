@@ -4,7 +4,10 @@ pub mod models;
 pub mod schema;
 pub mod store;
 
-pub use models::{new_id, Agent, Conversation, Message, NewAgent, NewMessage, NewProject, Project};
+pub use models::{
+    new_id, Agent, Conversation, Message, NewAgent, NewMessage, NewProject, NewSkill, Project,
+    Skill,
+};
 pub use store::{Result, Store, StoreError};
 
 #[cfg(test)]

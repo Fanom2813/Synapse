@@ -88,6 +88,35 @@ pub struct NewMessage {
     pub meta: String,
 }
 
+/// A skill installed in the library (Agent Skills `SKILL.md` format).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Skill {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub body: String,
+    pub license: String,
+    pub repo: String,
+    pub sha: String,
+    pub path: String,
+    pub local_path: String,
+    pub updated_at: i64,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NewSkill {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub body: String,
+    pub license: String,
+    pub repo: String,
+    pub sha: String,
+    pub path: String,
+    pub local_path: String,
+}
+
 /// Unique id helper (`prefix` + millis + counter) without extra dependencies.
 pub fn new_id(prefix: &str) -> String {
     use std::sync::atomic::{AtomicU64, Ordering};

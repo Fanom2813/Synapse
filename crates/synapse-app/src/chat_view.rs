@@ -7,7 +7,10 @@
 
 use std::collections::HashMap;
 
-use synapse_llm::{AgentEvent, LlmError, ModelBackend, Role, TurnMessage, TurnRequest};
+use synapse_llm::{
+    AgentEvent, Catalog, ConversationCost, LlmError, MessageCost, ModelBackend, Role, TurnMessage,
+    TurnRequest, Usage,
+};
 
 /// Who sent a message.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -151,6 +154,13 @@ pub struct ChatState {
     running: bool,
     frame_flushes: u64,
     last_error: Option<String>,
+    /// Provider-reported usage per agent message (stream `Usage`/`Done`).
+    usages: HashMap<usize, Usage>,
+    /// Priced costs per agent message (see [`Self::price_turn`]).
+    costs: HashMap<usize, MessageCost>,
+    conversation_id: String,
+    /// Leading messages already written by [`Self::save_to_store`].
+    saved: usize,
 }
 
 impl ChatState {
@@ -323,9 +333,9 @@ impl ChatState {
     }
 
     /// Apply one backend stream event to the agent message. Text deltas are
-    /// buffered (see [`Self::flush_frame`]); `Done` flushes and finishes the
-    /// run. Tool calls and usage are ignored by this single-agent view.
-    /// No-op when the run was stopped.
+    /// buffered (see [`Self::flush_frame`]); usage is recorded for pricing;
+    /// `Done` flushes and finishes the run. Tool calls are ignored by this
+    /// single-agent view. No-op when the run was stopped.
     pub fn apply_event(&mut self, id: usize, event: AgentEvent) {
         if !self.running {
             return;
@@ -335,11 +345,177 @@ impl ChatState {
                 self.push_delta(id, &delta);
                 self.flush_frame();
             }
-            AgentEvent::ToolCall(_) | AgentEvent::Usage(_) => {}
-            AgentEvent::Done { .. } => {
+            AgentEvent::ToolCall(_) => {}
+            AgentEvent::Usage(usage) => {
+                if usage != Usage::default() {
+                    self.usages.insert(id, usage);
+                }
+            }
+            AgentEvent::Done { usage, .. } => {
+                if usage != Usage::default() {
+                    self.usages.insert(id, usage);
+                }
                 self.finish();
             }
         }
+    }
+
+    /// Provider-reported usage for an agent message, if the stream sent one.
+    pub fn usage_for(&self, id: usize) -> Option<Usage> {
+        self.usages.get(&id).copied()
+    }
+
+    /// Priced cost for an agent message, if [`Self::price_turn`] ran.
+    pub fn cost_for(&self, id: usize) -> Option<&MessageCost> {
+        self.costs.get(&id)
+    }
+
+    /// Conversation this chat persists to (see [`Self::save_to_store`]).
+    pub fn conversation_id(&self) -> &str {
+        &self.conversation_id
+    }
+
+    pub fn set_conversation_id(&mut self, id: impl Into<String>) {
+        self.conversation_id = id.into();
+    }
+
+    /// Price a finished turn from its recorded usage and remember the cost
+    /// for the header label and [`Self::save_to_store`]. Unknown models
+    /// price at 0.0 rather than failing the turn. Returns `None` when the
+    /// stream reported no usage.
+    pub fn price_turn(
+        &mut self,
+        id: usize,
+        catalog: &Catalog,
+        provider_id: &str,
+        model_id: &str,
+    ) -> Option<MessageCost> {
+        let usage = self.usages.get(&id).copied()?;
+        let message_id = self.persisted_id(id);
+        let cost = MessageCost::new(
+            catalog,
+            message_id,
+            self.conversation_id.clone(),
+            provider_id,
+            model_id,
+            usage,
+        );
+        self.costs.insert(id, cost.clone());
+        Some(cost)
+    }
+
+    /// Totals over the priced turns, for the chat header / title bar.
+    pub fn conversation_cost(&self) -> ConversationCost {
+        let ordered: Vec<MessageCost> = self
+            .messages
+            .iter()
+            .filter_map(|m| self.costs.get(&m.id).cloned())
+            .collect();
+        ConversationCost::summarize(self.conversation_id.clone(), &ordered)
+    }
+
+    fn persisted_id(&self, id: usize) -> String {
+        if self.conversation_id.is_empty() {
+            format!("msg-{id}")
+        } else {
+            format!("{}-m{id}", self.conversation_id)
+        }
+    }
+
+    /// Persist messages not yet saved to the conversation (user rows plus
+    /// agent rows with `{"cost": ...}` meta), so the chat survives
+    /// reopening (see [`Self::load_from_store`]). No-op when no
+    /// conversation is set. Returns the number of newly saved rows.
+    pub fn save_to_store(
+        &mut self,
+        store: &synapse_store::Store,
+    ) -> Result<usize, synapse_store::StoreError> {
+        if self.conversation_id.is_empty() || self.saved >= self.messages.len() {
+            return Ok(0);
+        }
+        let mut saved = 0;
+        for m in self.messages.iter().skip(self.saved) {
+            let (from_id, kind) = match m.role {
+                ChatRole::User => ("user", "ask"),
+                ChatRole::Agent => ("agent", "answer"),
+                ChatRole::System => ("system", "note"),
+            };
+            let meta = match self.costs.get(&m.id) {
+                Some(cost) => format!(r#"{{"cost": {}}}"#, cost.meta_json()),
+                None => "{}".to_string(),
+            };
+            store.insert_message(&synapse_store::NewMessage {
+                id: self.persisted_id(m.id),
+                conversation_id: self.conversation_id.clone(),
+                run_id: String::new(),
+                from_id: from_id.into(),
+                to_json: "[]".into(),
+                kind: kind.into(),
+                reply_to: String::new(),
+                thread_id: String::new(),
+                body: m.body.clone(),
+                meta,
+            })?;
+            saved += 1;
+        }
+        self.saved += saved;
+        Ok(saved)
+    }
+
+    /// Reload a persisted conversation, replacing the visible history
+    /// (the draft is kept). Costs and usage rebuild from the stored
+    /// message meta so the header totals match.
+    pub fn load_from_store(
+        &mut self,
+        store: &synapse_store::Store,
+        conversation_id: &str,
+    ) -> Result<ConversationCost, synapse_store::StoreError> {
+        let rows = store.list_messages(conversation_id, i64::MAX, 0)?;
+        self.messages.clear();
+        self.pending.clear();
+        self.usages.clear();
+        self.costs.clear();
+        self.next_id = 0;
+        self.running = false;
+        self.conversation_id = conversation_id.to_string();
+        for row in &rows {
+            let role = match row.from_id.as_str() {
+                "user" => ChatRole::User,
+                "system" => ChatRole::System,
+                _ => ChatRole::Agent,
+            };
+            let author = match role {
+                ChatRole::User => "You",
+                ChatRole::Agent => "Agent",
+                ChatRole::System => "System",
+            };
+            let id = self.alloc_id();
+            self.messages.push(ChatMessage {
+                id,
+                role,
+                author: author.to_string(),
+                body: row.body.clone(),
+                streaming: false,
+            });
+            if role == ChatRole::Agent {
+                if let Some(cost) =
+                    MessageCost::from_meta(row.id.clone(), conversation_id, &row.meta)
+                {
+                    let has_cost =
+                        cost.input_tokens > 0 || cost.output_tokens > 0 || cost.cost_usd > 0.0;
+                    self.usages
+                        .insert(id, Usage::new(cost.input_tokens, cost.output_tokens));
+                    if has_cost {
+                        let mut keyed = cost;
+                        keyed.message_id = self.persisted_id(id);
+                        keyed.conversation_id = conversation_id.to_string();
+                        self.costs.insert(id, keyed);
+                    }
+                }
+            }
+        }
+        self.saved = self.messages.len();
+        Ok(self.conversation_cost())
     }
 
     /// Record a provider failure on the agent placeholder and surface the
@@ -385,35 +561,91 @@ impl ChatState {
     }
 }
 
-// ---- GPUI view (virtualised list + streaming markdown) ----
+// ---- GPUI view (virtualised list + streaming markdown + composer) ----
 
+use gpui_kit::component::button::Button;
+use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::message_scroller::{MessageScroller, MessageScrollerState};
 use gpui_kit::component::text::TextView;
 use gpui_kit::component::v_flex;
 use gpui_kit::{
     div, App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render,
-    Styled as _, Window,
+    Styled as _, Subscription, Window,
 };
 
-/// GPUI view rendering [`ChatState`] as a virtualised message list.
+/// What the view needs to price and persist a finished turn. All fields are
+/// optional so the chat still works (without costs/persistence) when the
+/// store or catalog is unavailable.
+#[derive(Clone, Default)]
+pub struct ChatPersist {
+    pub store: Option<std::sync::Arc<synapse_store::Store>>,
+    pub catalog: Option<std::sync::Arc<Catalog>>,
+    pub provider_id: String,
+    pub model_id: String,
+}
+
+/// GPUI view rendering [`ChatState`] as a virtualised message list with a
+/// real composer.
 ///
 /// - Rows are virtualised by GPUI Kit's `MessageScroller` (off-screen
 ///   markdown is not laid out).
 /// - Bodies render with `TextView::markdown(...).stream_fade(true)` (word
 ///   fade-in) plus tree-sitter code highlighting via `code_block_actions`.
-/// - The composer morphs Send ⇄ Stop; the draft is kept on stop.
-pub struct ChatView {
+/// - The composer is a real single-line [`Input`] whose text mirrors
+///   [`ChatState::draft`]; the Send button morphs into Stop while the
+///   selected [`ModelBackend`] streams, and clicking it sends or stops.
+///   Provider errors render above the composer; the draft is kept on stop.
+/// - Finished turns are priced ([`ChatPersist`]) and persisted to the store
+///   so the chat survives reopening.
+pub struct ChatView<B> {
     state: ChatState,
     scroller: Entity<MessageScrollerState>,
+    composer: Entity<InputState>,
+    backend: std::sync::Arc<B>,
+    model: String,
+    persist: ChatPersist,
+    _composer_sub: Subscription,
 }
 
-impl ChatView {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+impl<B> ChatView<B>
+where
+    B: ModelBackend + 'static,
+{
+    pub fn new(
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        backend: std::sync::Arc<B>,
+        model: impl Into<String>,
+    ) -> Self {
         let scroller = cx.new(|cx| MessageScrollerState::new(0, cx));
+        let composer = cx.new(|cx| InputState::new(window, cx).placeholder("Message the agent…"));
+        let composer_sub = cx.subscribe_in(&composer, window, Self::on_composer_event);
         Self {
             state: ChatState::new(),
             scroller,
+            composer,
+            backend,
+            model: model.into(),
+            persist: ChatPersist::default(),
+            _composer_sub: composer_sub,
         }
+    }
+
+    pub fn with_persist(mut self, persist: ChatPersist) -> Self {
+        self.persist = persist;
+        self
+    }
+
+    /// Point this chat at a persisted conversation and reload its history
+    /// so results survive reopening.
+    pub fn open_conversation(
+        &mut self,
+        store: &synapse_store::Store,
+        conversation_id: &str,
+    ) -> ConversationCost {
+        self.state
+            .load_from_store(store, conversation_id)
+            .unwrap_or_else(|_| self.state.conversation_cost())
     }
 
     pub fn chat_state(&self) -> &ChatState {
@@ -424,15 +656,95 @@ impl ChatView {
         &mut self.state
     }
 
+    /// Store backing this chat's persistence, if configured.
+    pub fn persist_store(&self) -> Option<std::sync::Arc<synapse_store::Store>> {
+        self.persist.store.clone()
+    }
+
+    fn on_composer_event(
+        &mut self,
+        _: &Entity<InputState>,
+        event: &InputEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if matches!(event, InputEvent::Change) {
+            let text = self.composer.read(cx).value().to_string();
+            self.state.set_draft(text);
+            cx.notify();
+        }
+    }
+
     fn sync_scroller(&mut self, cx: &mut Context<Self>) {
         let count = self.state.item_count();
         if self.scroller.read(cx).item_count() != count {
             self.scroller.update(cx, |s, cx| s.reset(count, cx));
         }
     }
+
+    /// Send-button click: mirror the composer into the draft and drive one
+    /// backend turn into a new agent message. Stop-button click: stop the
+    /// run and keep the draft (UI.md §5).
+    fn on_send_click(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.state.is_running() {
+            self.state.stop();
+            cx.notify();
+            return;
+        }
+        let text = self.composer.read(cx).value().to_string();
+        self.state.set_draft(text);
+        let model = self.model.clone();
+        let Some((agent, req)) = self.state.send_request(&model) else {
+            return;
+        };
+        self.composer.update(cx, |input, cx| {
+            input.set_value("", window, cx);
+        });
+        cx.notify();
+        let backend = self.backend.clone();
+        let persist = self.persist.clone();
+        cx.spawn_in(window, async move |this, cx| {
+            let events = match backend.turn_stream(req).await {
+                Ok(events) => events,
+                Err(err) => {
+                    _ = this.update_in(cx, |this, _, cx| {
+                        this.state.fail_turn(agent, &err);
+                        cx.notify();
+                    });
+                    return;
+                }
+            };
+            for event in events {
+                let running = this
+                    .update_in(cx, |this, _, _| this.state.is_running())
+                    .unwrap_or(false);
+                if !running {
+                    break;
+                }
+                _ = this.update_in(cx, |this, _, cx| {
+                    this.state.apply_event(agent, event);
+                    cx.notify();
+                });
+            }
+            _ = this.update_in(cx, |this, _, cx| {
+                if let Some(catalog) = persist.catalog.as_deref() {
+                    this.state
+                        .price_turn(agent, catalog, &persist.provider_id, &persist.model_id);
+                }
+                if let Some(store) = persist.store.as_deref() {
+                    let _ = this.state.save_to_store(store);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
 }
 
-impl Render for ChatView {
+impl<B> Render for ChatView<B>
+where
+    B: ModelBackend + 'static,
+{
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.sync_scroller(cx);
         let bodies: Vec<String> = self
@@ -448,28 +760,42 @@ impl Render for ChatView {
             .map(|m| m.author.clone())
             .collect();
         let send_label = self.state.send_label().to_string();
-        let draft = self.state.draft().to_string();
+        let cost_label = self.state.conversation_cost().header_label();
+        let error = self.state.last_error().map(str::to_string);
 
-        v_flex()
-            .size_full()
-            .child(div().flex_1().child(MessageScroller::new(
-                "chat-view-scroller",
-                self.scroller.clone(),
-                move |ix, _window: &mut Window, _cx: &mut App| {
-                    let body = bodies.get(ix).cloned().unwrap_or_default();
-                    let author = authors.get(ix).cloned().unwrap_or_default();
-                    v_flex().child(div().child(author)).child(
-                        TextView::markdown(format!("chat-msg-{ix}"), body)
-                            .stream_fade(true)
-                            .code_block_actions(|_block, _, _| div()),
-                    )
-                },
-            )))
-            .child(
-                div()
-                    .child(div().child(format!("Draft: {draft}")))
-                    .child(div().child(format!("Button: {send_label}"))),
-            )
+        let mut column =
+            v_flex()
+                .size_full()
+                .child(div().child(cost_label))
+                .child(div().flex_1().child(MessageScroller::new(
+                    "chat-view-scroller",
+                    self.scroller.clone(),
+                    move |ix, _window: &mut Window, _cx: &mut App| {
+                        let body = bodies.get(ix).cloned().unwrap_or_default();
+                        let author = authors.get(ix).cloned().unwrap_or_default();
+                        v_flex().child(div().child(author)).child(
+                            TextView::markdown(format!("chat-msg-{ix}"), body)
+                                .stream_fade(true)
+                                .code_block_actions(|_block, _, _| div()),
+                        )
+                    },
+                )));
+        if let Some(message) = error {
+            column = column.child(div().child(format!("Error: {message}")));
+        }
+        column.child(
+            div()
+                .flex()
+                .flex_row()
+                .child(div().flex_1().child(Input::new(&self.composer)))
+                .child(
+                    Button::new("chat-send-stop")
+                        .label(send_label)
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.on_send_click(window, cx);
+                        })),
+                ),
+        )
     }
 }
 
@@ -586,6 +912,77 @@ mod chat_view_tests {
         assert_eq!(s.message(agent).unwrap().body, "");
         assert_eq!(s.draft(), "follow-up typed while running");
         assert!(!s.is_running());
+    }
+
+    #[tokio::test]
+    async fn chat_view_turn_records_usage_prices_and_persists() {
+        use synapse_llm::{MockLlm, TurnOutput, Usage};
+        let catalog = synapse_llm::Catalog::embedded().expect("embedded catalog");
+        let (provider_id, model_id) = {
+            let mut found = None;
+            for provider in catalog.providers() {
+                for (id, model) in &provider.models {
+                    if model.cost.input.unwrap_or(0.0) > 0.0 {
+                        found = Some((provider.id.clone(), id.clone()));
+                        break;
+                    }
+                }
+            }
+            found.expect("priced model")
+        };
+        let usage = Usage::new(120, 60);
+        let backend = MockLlm::with_outputs(vec![TurnOutput {
+            text: "persisted reply".to_string(),
+            tool_calls: Vec::new(),
+            usage,
+        }]);
+        let store = synapse_store::Store::open_in_memory().expect("store");
+        store
+            .create_project(&synapse_store::NewProject {
+                id: "chat-p1".into(),
+                name: "Chat".into(),
+                goal: "persist".into(),
+                folder: "/tmp/synapse-chat".into(),
+                lead_agent_id: String::new(),
+                template: "custom".into(),
+            })
+            .expect("project");
+        store
+            .create_conversation("chat-conv", "chat-p1", "chat", "Chat")
+            .expect("conversation");
+
+        let mut s = ChatState::new();
+        s.set_conversation_id("chat-conv");
+        s.set_draft("remember this");
+        let (agent, req) = s.send_request("chat-model").expect("send");
+        s.drive_turn(&backend, agent, req).await;
+        assert_eq!(s.message(agent).unwrap().body, "persisted reply");
+        // Usage from the stream is recorded and priced.
+        assert_eq!(s.usage_for(agent), Some(usage));
+        let cost = s
+            .price_turn(agent, &catalog, &provider_id, &model_id)
+            .expect("priced");
+        assert_eq!(cost.input_tokens, 120);
+        assert!(cost.cost_usd > 0.0);
+        assert!(s.conversation_cost().header_label().contains("1 msg"));
+
+        // Persisted rows carry the cost meta; a fresh state reloads them.
+        assert_eq!(s.save_to_store(&store).expect("save"), 2);
+        assert_eq!(s.save_to_store(&store).expect("save again"), 0);
+        let mut reopened = ChatState::new();
+        let total = reopened
+            .load_from_store(&store, "chat-conv")
+            .expect("reload");
+        assert_eq!(reopened.item_count(), 2);
+        assert_eq!(reopened.messages()[0].body, "remember this");
+        assert_eq!(reopened.messages()[1].body, "persisted reply");
+        assert_eq!(total.messages, 1);
+        assert_eq!(total.input_tokens, 120);
+        assert_eq!(reopened.conversation_cost(), total);
+        assert!(reopened
+            .conversation_cost()
+            .header_label()
+            .contains("1 msg"));
     }
 
     #[tokio::test]

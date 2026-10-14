@@ -7,8 +7,14 @@
 //! switcher, run pill, command-palette button, approvals inbox, budget).
 //! Window behaviour (close hides, destroy after 60 s hidden, tray, single
 //! instance) is modelled in [`crate::lifecycle`] and wired here.
+//!
+//! The main column hosts the single-agent [`ChatView`](crate::chat_view::ChatView):
+//! a real composer (input + Send/Stop) driving the selected [`ModelBackend`]
+//! with streamed replies, errors, and store persistence (see `chat_config`).
 
 use crate::app_dirs;
+use crate::chat_view::ChatPersist;
+use crate::settings_providers::{ModelRole, ProvidersSettings};
 use crate::shell::{AppShell, ShellPersist};
 
 /// Headless description of what the window shows. Toolkit-free so tests
@@ -71,6 +77,85 @@ pub fn open_persisted_shell() -> AppShell {
     shell
 }
 
+/// Backend, model and persistence for the main window's single-agent chat.
+///
+/// The model comes from the lead default in provider settings (assumed: the
+/// single-agent chat speaks with the lead model); the key is read from the
+/// OS keychain just before the backend is built. Anything missing falls back
+/// to a keyless backend so the window always opens — turns then surface the
+/// actionable missing-key error in the chat itself.
+pub fn chat_config() -> (
+    std::sync::Arc<synapse_llm::GenaiBackend>,
+    String,
+    ChatPersist,
+) {
+    use secrecy::ExposeSecret as _;
+    use synapse_llm::keys::SecretStore as _;
+    let catalog = synapse_llm::Catalog::embedded().ok();
+    let store = synapse_store::Store::open(app_dirs::db_path()).ok();
+    let mut provider_id = String::new();
+    let mut model = String::from("gpt-4o-mini");
+    let mut api_key = None;
+    let mut base_url = None;
+    if let (Some(catalog), Some(store)) = (catalog.as_ref(), store.as_ref()) {
+        if let Ok(settings) = ProvidersSettings::load(store) {
+            if let Some((p, m)) = settings.default_for(ModelRole::Lead) {
+                provider_id = p.clone();
+                model = m.clone();
+                base_url = settings.base_url_for(catalog, &p);
+                api_key = synapse_llm::keys::KeychainSecretStore
+                    .get("provider", &p)
+                    .ok()
+                    .flatten()
+                    .map(|s| s.expose_secret().to_string());
+            }
+        }
+    }
+    let backend = std::sync::Arc::new(synapse_llm::GenaiBackend::new(
+        model.clone(),
+        api_key,
+        base_url,
+    ));
+    let persist = ChatPersist {
+        store: store.map(std::sync::Arc::new),
+        catalog: catalog.map(std::sync::Arc::new),
+        provider_id,
+        model_id: model.clone(),
+    };
+    (backend, model, persist)
+}
+
+/// Project + conversation rows backing the main window chat. Created on
+/// first use; existing rows (and their messages) are reused so chat results
+/// survive reopening. Best-effort: persistence is skipped when the store is
+/// unavailable.
+pub fn ensure_chat_conversation(store: &synapse_store::Store) -> Option<String> {
+    const PROJECT_ID: &str = "chat";
+    const CONVERSATION_ID: &str = "chat-main";
+    if store.get_project(PROJECT_ID).is_err() {
+        store
+            .create_project(&synapse_store::NewProject {
+                id: PROJECT_ID.into(),
+                name: "Chat".into(),
+                goal: String::new(),
+                folder: String::new(),
+                lead_agent_id: String::new(),
+                template: "custom".into(),
+            })
+            .ok()?;
+    }
+    let exists = store
+        .list_conversations(PROJECT_ID)
+        .map(|rows| rows.iter().any(|c| c.id == CONVERSATION_ID))
+        .unwrap_or(false);
+    if !exists {
+        store
+            .create_conversation(CONVERSATION_ID, PROJECT_ID, "chat", "Chat")
+            .ok()?;
+    }
+    Some(CONVERSATION_ID.into())
+}
+
 /// Launch the native window. Called from the `synapse` binary; blocks on
 /// the GPUI event loop until explicit quit (tray Quit / Cmd-Ctrl-Q).
 ///
@@ -86,6 +171,7 @@ pub fn open_persisted_shell() -> AppShell {
 ///   [`crate::lifecycle::apply_tray_command`].
 #[cfg(not(test))]
 pub fn launch() {
+    use crate::chat_view::ChatView;
     use crate::lifecycle::{
         apply_tray_command, bind_single_instance, handle_second_launch, notify_existing_instance,
         read_instance_message, tray_menu_items, OpenEffect, TrayCommand, WindowLifecycle,
@@ -98,6 +184,7 @@ pub fn launch() {
 
     struct ShellView {
         shell: AppShell,
+        chat: Entity<ChatView<synapse_llm::GenaiBackend>>,
     }
 
     impl ShellView {
@@ -158,7 +245,13 @@ pub fn launch() {
                         .flex_row()
                         .flex_1()
                         .child(div().p_2().child(screen.sidebar_text.clone()))
-                        .child(div().flex_1().p_2().child(screen.main_text.clone()))
+                        .child(
+                            div()
+                                .flex_1()
+                                .p_2()
+                                .child(screen.main_text.clone())
+                                .child(self.chat.clone()),
+                        )
                         .child(div().p_2().child(screen.panel_text.clone())),
                 )
                 .child(
@@ -191,8 +284,18 @@ pub fn launch() {
     impl Global for TrayHandle {}
 
     fn open_main_window(cx: &mut App, shell: AppShell) -> AnyWindowHandle {
-        let (handle, _) = open_window(WindowOptions::default(), cx, |_, cx| {
-            cx.new(|_| ShellView { shell })
+        let (handle, _) = open_window(WindowOptions::default(), cx, |window, cx| {
+            let (backend, model, persist) = chat_config();
+            let chat = cx.new(|cx| {
+                let mut view = ChatView::new(window, cx, backend, model).with_persist(persist);
+                if let Some(store) = view.persist_store() {
+                    if let Some(conversation) = ensure_chat_conversation(&store) {
+                        view.open_conversation(&store, &conversation);
+                    }
+                }
+                view
+            });
+            cx.new(|_| ShellView { shell, chat })
         })
         .expect("failed to open Synapse window");
         handle
@@ -396,6 +499,31 @@ mod tests {
     use super::*;
     use crate::shell::ShellProject;
     use crate::titlebar::RunPill;
+
+    #[test]
+    fn window_chat_conversation_is_reused_across_opens() {
+        let store = synapse_store::Store::open_in_memory().expect("store");
+        let first = ensure_chat_conversation(&store).expect("conversation");
+        store
+            .insert_message(&synapse_store::NewMessage {
+                id: "chat-main-m0".into(),
+                conversation_id: first.clone(),
+                run_id: String::new(),
+                from_id: "user".into(),
+                to_json: "[]".into(),
+                kind: "ask".into(),
+                reply_to: String::new(),
+                thread_id: String::new(),
+                body: "hello".into(),
+                meta: "{}".into(),
+            })
+            .expect("message");
+        // Reopening reuses the same conversation, so history survives.
+        let second = ensure_chat_conversation(&store).expect("conversation");
+        assert_eq!(second, first);
+        let rows = store.list_messages(&first, 10, 0).expect("messages");
+        assert_eq!(rows.len(), 1);
+    }
 
     #[test]
     fn shell_window_shows_sidebar_and_room_empty_states() {

@@ -1118,6 +1118,13 @@ dependencies = [
 [[package]]
 name = "synapse-acceptance"
 version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "synapse-app",
+ "synapse-core",
+ "synapse-store",
+ "tokio",
+]
 
 [[package]]
 name = "synapse-acp"

@@ -38,6 +38,7 @@ genai = { version = "=0.2.4" }
 rmcp = { version = "=0.8.0", features = ["client", "server", "transport-child-process", "transport-streamable-http-client-reqwest", "auth"] }
 agent-client-protocol = { version = "=0.3.0" }
 globset = "0.4"
+libc = "0.2"
 schemars = "1"
 toml = "1"
 tracing = "0.1"
@@ -53,7 +54,7 @@ croner = "3"
 async-trait = "0.1"
 dirs = "6"
 interprocess = "2"
-nono = { version = "=0.8.0" }
+nono = { version = "=0.80.0" }
 dom_smoothie = { version = "=0.18.0" }
 htmd = { version = "=0.5.0" }
 sha2 = "0.10"

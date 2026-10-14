@@ -6690,6 +6690,7 @@ dependencies = [
  "serde_json",
  "synapse-app",
  "synapse-core",
+ "synapse-llm",
  "synapse-store",
  "tokio",
 ]

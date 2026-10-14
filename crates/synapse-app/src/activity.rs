@@ -216,10 +216,7 @@ impl ActivityView {
     pub fn retry_run(&mut self, run_id: &str) -> Option<&'static str> {
         let row = self.find_run_mut(run_id)?;
         match row.state.status {
-            RunStatus::Failed
-            | RunStatus::Stopped
-            | RunStatus::Interrupted
-            | RunStatus::Done => {
+            RunStatus::Failed | RunStatus::Stopped | RunStatus::Interrupted | RunStatus::Done => {
                 row.state.status = RunStatus::Running;
             }
             _ => {}

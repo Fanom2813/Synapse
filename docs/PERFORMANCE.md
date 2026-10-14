@@ -36,7 +36,7 @@ must be justified against these numbers.
   the default set, persona collections, MCP servers, ACP adapters.
 - Heavy optional parts behind cargo features that are **on** in the release build but can be measured
   separately: `browser` (chromiumoxide), `sandbox` (nono), `vectors` (sqlite-vec + model2vec), `fast` (gpui-fast).
-- `cargo bloat --release --crates` report in CI on every PR; a size regression > 5 % or over the cap fails.
+- `cargo bloat --release --crates` report from the perf task on the build box; a size regression > 5 % or over the cap fails.
 
 ## 2. Rules
 
@@ -66,7 +66,7 @@ must be justified against these numbers.
   (`idle`, `tray`, `run5`, `scroll`), and prints JSON: avg CPU %, peak/avg RSS, footprint (macOS),
   wakeups if available, frame times. Implemented with `sysinfo` / `memory-stats` reading its own process.
 - Perf tests in `synapse-acceptance/tests/m10_performance.rs` assert the table above (run in release,
-  marked `#[ignore]` on CI runners without a GPU and run locally / on a macOS runner).
+  marked `#[ignore]` where there is no GPU and run on the build box / locally).
 - Dev builds show the GPUI Kit `gpui-fps` overlay (toggle Cmd/Ctrl-Alt-Shift-P).
 - Known risk to check early: whether GPUI still wakes every display refresh while idle on macOS/X11.
   If yes, document it and pick the backend (`fast` or not) that is idle-quiet.

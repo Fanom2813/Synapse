@@ -21,9 +21,9 @@ Goal: an app window that opens on macOS/Windows/Linux, with the workspace, store
 tray and hide-to-tray in place, and idle CPU near zero.
 accept: `cargo test -p synapse-acceptance --test m01_foundation`
 
-1. **Cargo workspace + CI.** Crates from ARCHITECTURE.md §2 (empty libs compile), pinned
+1. **Cargo workspace.** Crates from ARCHITECTURE.md §2 (empty libs compile), pinned
    `[workspace.dependencies]` from STACK.md, release profile from PERFORMANCE.md, `rust-toolchain.toml`,
-   GitHub Actions matrix (macOS, Windows, Ubuntu) running the full check. verify: `cargo build --workspace && cargo test --workspace`
+   (no CI workflow: see AGENTS.md §11). verify: `cargo build --workspace && cargo test --workspace`
 2. **App shell window.** `synapse` binary opens a GPUI Kit window with sidebar / main / right-panel dock
    layout (empty states), custom title bar per UI.md §1b (native window controls per OS, drag/zoom, sidebar and
    panel toggles, command palette button; other slots as placeholders), motion tokens module (UI.md §5), theme (system/light/dark) switch persisted; fonts (UI.md §6, subset script) and Phosphor icons
@@ -38,8 +38,8 @@ accept: `cargo test -p synapse-acceptance --test m01_foundation`
 6. **Tray, hide-on-close, single instance.** `QuitMode::Explicit`; close hides window, window destroyed after
    60 s hidden and rebuilt on open; gpui-tray menu (Open, Quit); `interprocess` single instance (second
    launch focuses the first). verify: `cargo test -p synapse-app lifecycle`
-7. **Perf probe + size/perf CI gates.** `--perf-probe idle|tray --seconds N` printing JSON (CPU, RSS, footprint);
-   a test that the idle window does not request frames when nothing animates; CI job (macOS) that builds
+7. **Perf probe + size/perf gates.** `--perf-probe idle|tray --seconds N` printing JSON (CPU, RSS, footprint);
+   a test that the idle window does not request frames when nothing animates; a script/test run on the build box that builds
    release, checks binary size, `cargo bloat --crates` report, `cargo tree -d` duplicate check, and runs the
    idle/tray probes against the hard caps in PERFORMANCE.md §1. verify: `cargo test -p synapse-app perf_probe`
 

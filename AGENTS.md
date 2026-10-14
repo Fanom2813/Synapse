@@ -94,3 +94,12 @@ Read first: `docs/PRD.md` (what), `docs/ARCHITECTURE.md` (where), `docs/STACK.md
 ## 10. Platforms
 macOS, Windows and Linux (X11 + Wayland) are all first-class. Use `cfg(target_os)` blocks only in
 `synapse-app::platform`; note platform gaps in `docs/PLATFORM-NOTES.md`.
+
+## 11. CI, releases and changes you did not make
+- There is **no CI workflow on purpose** (GitHub Actions minutes were being wasted). All checks (fmt, clippy,
+  tests, perf probes) run on the build box. Do not add `.github/workflows/ci.yml` or any push/PR-triggered workflow.
+- `.github/workflows/release.yml` runs **only** by manual dispatch with an existing tag (`workflow_dispatch`).
+  Never make it trigger on tag pushes; tagging per task is fine, building installers per task is not.
+- Edits made by the maintainer outside the loop (workflows, docs, config) are intentional. If `git log`/`git diff`
+  shows changes you did not write, treat them as the new baseline: do not revert, "fix", or reject them, and do
+  not re-add files they removed. If one blocks your task, note it in the summary and work around it.

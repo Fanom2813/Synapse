@@ -16,7 +16,7 @@ entered in Settings and stored in the OS keychain.
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY` | live provider smoke tests (any one) |
 | `SEARXNG_URL` | live research smoke test with a SearXNG instance (JSON format enabled) |
 | `BRAVE_API_KEY`, `TAVILY_API_KEY`, `EXA_API_KEY`, `JINA_API_KEY` | optional search providers |
-| `PACKAGER_PRIVATE_KEY`, `PACKAGER_PRIVATE_KEY_PASSWORD` (repo secrets) | signed release builds + updater signatures; without them CI still ships unsigned installers |
+| `PACKAGER_PRIVATE_KEY`, `PACKAGER_PRIVATE_KEY_PASSWORD` (repo secrets) | signed release builds + updater signatures; without them the release workflow still ships unsigned installers |
 
 Local models: run Ollama (`:11434`) or LM Studio (`:1234`); Synapse detects them.
 CLI agents: install and log in to `claude`, `codex`, `opencode` or `gemini` as usual; Synapse detects them.

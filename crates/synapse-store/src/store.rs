@@ -86,6 +86,14 @@ impl Store {
         })
     }
 
+    pub(crate) fn with_writer_pub<T>(&self, f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
+        self.with_writer(f)
+    }
+
+    pub(crate) fn with_reader_pub<T>(&self, f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
+        self.with_reader(f)
+    }
+
     fn with_writer<T>(&self, f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
         let conn = self.writer.lock().expect("writer lock");
         f(&conn)

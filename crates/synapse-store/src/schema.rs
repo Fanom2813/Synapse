@@ -3,7 +3,12 @@
 use rusqlite_migration::{Migrations, M};
 
 pub fn migrations() -> Migrations<'static> {
-    Migrations::new(vec![M::up(SCHEMA_V1), M::up(SCHEMA_V2), M::up(SCHEMA_V3)])
+    Migrations::new(vec![
+        M::up(SCHEMA_V1),
+        M::up(SCHEMA_V2),
+        M::up(SCHEMA_V3),
+        M::up(SCHEMA_V4),
+    ])
 }
 
 /// Initial schema: full table set from ARCHITECTURE.md §3.
@@ -228,5 +233,32 @@ END;
 CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
     INSERT INTO memories_fts(memories_fts, rowid, text) VALUES ('delete', old.rowid, old.text);
     INSERT INTO memories_fts(rowid, text) VALUES (new.rowid, new.text);
+END;
+"#;
+/// V4: hybrid semantic index — FTS5 over eligible archive content (sources,
+/// artifact versions) plus lookup index for vector chunks.
+const SCHEMA_V4: &str = r#"
+CREATE INDEX IF NOT EXISTS idx_vec_chunks_owner ON vec_chunks(owner_kind, owner_id);
+CREATE VIRTUAL TABLE IF NOT EXISTS sources_fts USING fts5(title, content_md, content='sources', content_rowid='rowid');
+CREATE TRIGGER IF NOT EXISTS sources_ai AFTER INSERT ON sources BEGIN
+    INSERT INTO sources_fts(rowid, title, content_md) VALUES (new.rowid, new.title, new.content_md);
+END;
+CREATE TRIGGER IF NOT EXISTS sources_ad AFTER DELETE ON sources BEGIN
+    INSERT INTO sources_fts(sources_fts, rowid, title, content_md) VALUES ('delete', old.rowid, old.title, old.content_md);
+END;
+CREATE TRIGGER IF NOT EXISTS sources_au AFTER UPDATE ON sources BEGIN
+    INSERT INTO sources_fts(sources_fts, rowid, title, content_md) VALUES ('delete', old.rowid, old.title, old.content_md);
+    INSERT INTO sources_fts(rowid, title, content_md) VALUES (new.rowid, new.title, new.content_md);
+END;
+CREATE VIRTUAL TABLE IF NOT EXISTS artifact_versions_fts USING fts5(body_md, changelog, content='artifact_versions', content_rowid='rowid');
+CREATE TRIGGER IF NOT EXISTS artifact_versions_ai AFTER INSERT ON artifact_versions BEGIN
+    INSERT INTO artifact_versions_fts(rowid, body_md, changelog) VALUES (new.rowid, new.body_md, new.changelog);
+END;
+CREATE TRIGGER IF NOT EXISTS artifact_versions_ad AFTER DELETE ON artifact_versions BEGIN
+    INSERT INTO artifact_versions_fts(artifact_versions_fts, rowid, body_md, changelog) VALUES ('delete', old.rowid, old.body_md, old.changelog);
+END;
+CREATE TRIGGER IF NOT EXISTS artifact_versions_au AFTER UPDATE ON artifact_versions BEGIN
+    INSERT INTO artifact_versions_fts(artifact_versions_fts, rowid, body_md, changelog) VALUES ('delete', old.rowid, old.body_md, old.changelog);
+    INSERT INTO artifact_versions_fts(rowid, body_md, changelog) VALUES (new.rowid, new.body_md, new.changelog);
 END;
 "#;

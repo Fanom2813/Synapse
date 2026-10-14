@@ -189,7 +189,7 @@ fn lifecycle_hides_destroys_and_rebuilds_without_quitting() {
 #[test]
 fn tray_menu_and_single_instance_focus_first() {
     let items = tray_menu_items();
-    assert!(items.contains(&"Open") && items.contains(&"Quit"));
+    assert!(items.iter().any(|i| i == "Open Synapse") && items.iter().any(|i| i == "Quit"));
 
     let mut life = WindowLifecycle::new_visible();
     life.close_window();

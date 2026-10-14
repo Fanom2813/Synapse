@@ -544,7 +544,7 @@ mod background_settings_tests {
             .set_launch_at_login(&store, &mut backend, true)
             .unwrap();
         assert!(backend.is_enabled().unwrap());
-        assert_eq!(BackgroundSettings::load(&store).launch_at_login, true);
+        assert!(BackgroundSettings::load(&store).launch_at_login);
         assert!(!section.launch.is_mismatched());
 
         // OS failure surfaces as an error + footnote, pref kept for retry.

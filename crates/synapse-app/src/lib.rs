@@ -1,5 +1,6 @@
 //! synapse-app: GPUI views, windows, tray, hotkey, notifications, theme (see docs/ARCHITECTURE.md).
 
+pub mod agent_editor;
 pub mod app_dirs;
 pub mod chat_view;
 pub mod empty;

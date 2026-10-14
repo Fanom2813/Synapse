@@ -1,6 +1,7 @@
 //! synapse-core: domain types, team bus, orchestrator (see docs/ARCHITECTURE.md).
 
 pub mod agents;
+pub mod artifacts;
 pub mod attachments;
 pub mod bus;
 pub mod orchestrator;
@@ -13,6 +14,11 @@ pub mod worker;
 pub use agents::{
     api_draft, validate_draft, Agent, AgentBackend, AgentDraft, AgentStore, ApiBackend, CliBackend,
     StoreError as AgentStoreError, ThinkingLevel, ValidatedAgent, ValidationError, KNOWN_TOOLS,
+};
+pub use artifacts::{
+    import_user_edit, mirror_artifact, needs_import, read_mirrored_body, render_synthesis_report,
+    report_file_content, slugify, strip_frontmatter, unified_diff, Artifact, ArtifactCitation,
+    ArtifactError, ArtifactStore, ArtifactVersion, Dissent, MirrorResult, ReportDraft, SourceEntry,
 };
 pub use attachments::{
     AttachmentError, AttachmentKind, AttachmentStore, DeliveredAttachment, RecipientCapabilities,

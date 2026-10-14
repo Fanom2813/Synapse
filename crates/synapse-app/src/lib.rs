@@ -23,6 +23,7 @@ pub mod memory_screens;
 pub mod notifications;
 pub mod perf_probe;
 pub mod persona_library;
+pub mod quick_ask;
 pub mod runtime;
 pub mod settings;
 pub mod settings_providers;

@@ -77,4 +77,4 @@ component list and examples, and on crates.io. Writing it ourselves is the last 
 | Snapshot tests | `insta` |
 | Process RSS/CPU in perf tests | `sysinfo` or `memory-stats` |
 | Lint/format | `cargo fmt`, `cargo clippy -D warnings` |
-| CI | GitHub Actions matrix: macos-latest, windows-latest, ubuntu-latest (Linux deps: libxkbcommon, libwayland, libvulkan, fontconfig, etc. per GPUI Kit's CI) |
+| CI | None. All checks (fmt, clippy, tests, perf probes) run on the build box (`sg`). GitHub Actions is used only for `release.yml` (tag -> installers). |

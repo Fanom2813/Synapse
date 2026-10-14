@@ -50,6 +50,7 @@ aho-corasick = "1"
 similar = "2"
 notify = "8"
 croner = "3"
+async-trait = "0.1"
 dirs = "6"
 interprocess = "2"
 nono = { version = "=0.8.0" }

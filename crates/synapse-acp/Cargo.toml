@@ -13,6 +13,7 @@ tokio-util = { workspace = true }
 reqwest = { workspace = true }
 dirs = { workspace = true }
 agent-client-protocol = { workspace = true }
+synapse-core = { path = "../synapse-core" }
 synapse-llm = { path = "../synapse-llm" }
 synapse-tools = { path = "../synapse-tools" }
 

@@ -9,9 +9,14 @@ pub mod detect;
 pub mod path;
 pub mod permissions;
 pub mod registry;
+pub mod team_mcp;
 
 pub use client::{config_from_adapter, default_cwd, AcpBackend, AcpConfig, AcpError, AcpSession};
 pub use detect::{detect_installed, AvailableAdapter, DetectedAgent, LoginState};
 pub use path::{effective_path_dirs, login_shell_path, split_path_var};
 pub use permissions::{acp_tool_request, handle_agent_request, AcpApproval, PermissionBridge};
 pub use registry::{fetch_registry, parse_registry, RegistryAgent, RegistryError};
+pub use team_mcp::{
+    team_mcp_server, TeamMcpError, TeamMcpServer, TeamMcpTool, TEAM_MCP_SERVER_NAME,
+    TEAM_MCP_STDIO_BINARY,
+};

@@ -39,6 +39,10 @@ pub struct AcpConfig {
     pub args: Vec<String>,
     pub cwd: PathBuf,
     pub env: Vec<(String, String)>,
+    /// MCP servers advertised in `session/new` — including the in-process
+    /// team-tools bridge from [`crate::team_mcp::team_mcp_server`] so CLI
+    /// agents can ask, delegate, and report findings as room messages.
+    pub mcp_servers: Vec<acp::McpServer>,
 }
 
 impl AcpConfig {
@@ -48,11 +52,17 @@ impl AcpConfig {
             args: Vec::new(),
             cwd: cwd.into(),
             env: Vec::new(),
+            mcp_servers: Vec::new(),
         }
     }
 
     pub fn with_args(mut self, args: Vec<String>) -> Self {
         self.args = args;
+        self
+    }
+
+    pub fn with_mcp_servers(mut self, servers: Vec<acp::McpServer>) -> Self {
+        self.mcp_servers = servers;
         self
     }
 }
@@ -309,7 +319,7 @@ impl AcpSession {
 
         let params = serde_json::to_value(acp::NewSessionRequest {
             cwd: config.cwd.clone(),
-            mcp_servers: Vec::new(),
+            mcp_servers: config.mcp_servers.clone(),
             meta: None,
         })
         .expect("new_session params");
@@ -640,6 +650,7 @@ pub fn config_from_adapter(command: &str, args: &[String], cwd: &Path) -> AcpCon
         args: args.to_vec(),
         cwd: cwd.to_path_buf(),
         env: Vec::new(),
+        mcp_servers: Vec::new(),
     }
 }
 

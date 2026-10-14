@@ -7653,6 +7653,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "synapse-core",
  "synapse-llm",
  "synapse-tools",
  "thiserror 2.0.21",

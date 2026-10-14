@@ -5,6 +5,7 @@ pub mod agents;
 pub mod artifacts;
 pub mod attachments;
 pub mod bus;
+pub mod export;
 pub mod learned_skills;
 pub mod memory_files;
 pub mod memory_recall;
@@ -33,6 +34,11 @@ pub use attachments::{
 pub use bus::{
     AttachmentRef, BusError, Envelope, Event, Kind, Participant, Priority, Recipients, SourceRef,
     TeamBus, Usage, BROADCAST_CAPACITY, INBOX_CAPACITY,
+};
+pub use export::{
+    export_artifact, export_filename, export_transcript, html_escape, markdown_to_html_body,
+    open_project_folder, printable_html, project_folder_path, write_export_file, ExportError,
+    ExportFormat,
 };
 pub use learned_skills::{
     propose_learned_skill, render_skill_markdown, skill_creator_input, skill_folder_files,

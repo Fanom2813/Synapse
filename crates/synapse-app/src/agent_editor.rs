@@ -124,12 +124,14 @@ impl AgentEditorState {
 
     /// Load an existing row into the editor (sheet opened from the roster).
     pub fn open_existing(row: &synapse_store::Agent) -> Self {
-        let mut out = Self::default();
-        out.agent_id = Some(row.id.clone());
-        out.name = row.name.clone();
-        out.role = row.role.clone();
-        out.instructions = row.instructions.clone();
-        out.avatar = row.avatar.clone();
+        let mut out = Self {
+            agent_id: Some(row.id.clone()),
+            name: row.name.clone(),
+            role: row.role.clone(),
+            instructions: row.instructions.clone(),
+            avatar: row.avatar.clone(),
+            ..Default::default()
+        };
         if let Ok(backend) = serde_json::from_str::<AgentBackend>(&row.backend) {
             match backend {
                 AgentBackend::Api(api) => {
@@ -319,7 +321,7 @@ pub fn save_editor(
             // Delete + re-create keeps every column in sync without a
             // migration; the id is preserved.
             store.delete_agent(id)?;
-            let created = store.create_agent(&synapse_store::NewAgent {
+            store.create_agent(&synapse_store::NewAgent {
                 id: id.clone(),
                 name: validated.name.clone(),
                 role: validated.role.clone(),
@@ -329,8 +331,7 @@ pub fn save_editor(
                 tools: tools_json,
                 permissions: permissions_json,
                 persona_source: cur.persona_source,
-            })?;
-            created
+            })?
         }
         None => {
             let id = synapse_store::new_id("agent");

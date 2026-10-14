@@ -184,7 +184,7 @@ pub fn launch() {
     use gpui_kit::component::button::{Button, ButtonVariants};
     use gpui_kit::*;
 
-    actions!(synapse_tray, [TrayOpen, TrayQuit]);
+    actions!(synapse_tray, [TrayOpen, TrayQuickAsk, TrayPauseAll, TrayApprovals, TrayQuit]);
 
     struct ShellView {
         shell: AppShell,
@@ -335,6 +335,30 @@ pub fn launch() {
         show_or_rebuild(cx);
     }
 
+    fn on_tray_quick_ask(_: &TrayQuickAsk, cx: &mut App) {
+        let _ = apply_tray_command(
+            &mut cx.global_mut::<LifecycleHost>().lifecycle,
+            TrayCommand::QuickAsk,
+        );
+        show_or_rebuild(cx);
+    }
+
+    fn on_tray_pause_all(_: &TrayPauseAll, cx: &mut App) {
+        let _ = apply_tray_command(
+            &mut cx.global_mut::<LifecycleHost>().lifecycle,
+            TrayCommand::PauseAll,
+        );
+        show_or_rebuild(cx);
+    }
+
+    fn on_tray_approvals(_: &TrayApprovals, cx: &mut App) {
+        let _ = apply_tray_command(
+            &mut cx.global_mut::<LifecycleHost>().lifecycle,
+            TrayCommand::ShowApprovals,
+        );
+        show_or_rebuild(cx);
+    }
+
     fn on_tray_quit(_: &TrayQuit, cx: &mut App) {
         let _ = apply_tray_command(
             &mut cx.global_mut::<LifecycleHost>().lifecycle,
@@ -348,16 +372,40 @@ pub fn launch() {
     }
 
     fn build_tray_menu(_cx: &mut App) -> Vec<MenuItem> {
+        use crate::lifecycle::parse_tray_menu_item;
         tray_menu_items()
             .into_iter()
-            .map(|label| match label {
-                "Open" => MenuItem::action("Open", TrayOpen),
-                _ => MenuItem::action("Quit", TrayQuit),
+            .filter_map(|label| {
+                let cmd = parse_tray_menu_item(&label)?;
+                Some(match cmd {
+                    TrayCommand::Open | TrayCommand::ShowRun(_) => {
+                        MenuItem::action(label, TrayOpen)
+                    }
+                    TrayCommand::QuickAsk => MenuItem::action("Quick Ask", TrayQuickAsk),
+                    TrayCommand::PauseAll | TrayCommand::ResumeAll => {
+                        MenuItem::action("Pause All", TrayPauseAll)
+                    }
+                    TrayCommand::ShowApprovals => {
+                        MenuItem::action("Pending approvals", TrayApprovals)
+                    }
+                    TrayCommand::Quit => MenuItem::action("Quit", TrayQuit),
+                })
             })
             .collect()
     }
 
-    fn tray_icon() -> gpui_tray::Result<gpui_tray::Icon> {
+    /// Tray dot colour per icon state: idle blue, working green,
+    /// needs-you amber. Toolkit-free state lives in `lifecycle`.
+    fn tray_icon_for(state: crate::lifecycle::TrayIconState) -> gpui_tray::Result<gpui_tray::Icon> {
+        let rgb = match state {
+            crate::lifecycle::TrayIconState::Idle => [45, 105, 220],
+            crate::lifecycle::TrayIconState::Working => [46, 160, 90],
+            crate::lifecycle::TrayIconState::NeedsYou => [220, 140, 30],
+        };
+        tray_dot_icon(rgb)
+    }
+
+    fn tray_dot_icon(rgb: [u8; 3]) -> gpui_tray::Result<gpui_tray::Icon> {
         const SIZE: u32 = 32;
         let mut rgba = vec![0_u8; (SIZE * SIZE * 4) as usize];
         for y in 0..SIZE {
@@ -366,11 +414,15 @@ pub fn launch() {
                 let dx = x as i32 - 16;
                 let dy = y as i32 - 16;
                 if dx * dx + dy * dy <= 14 * 14 {
-                    rgba[offset..offset + 4].copy_from_slice(&[45, 105, 220, 255]);
+                    rgba[offset..offset + 4].copy_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
                 }
             }
         }
         gpui_tray::Icon::from_rgba(rgba, SIZE, SIZE)
+    }
+
+    fn tray_icon() -> gpui_tray::Result<gpui_tray::Icon> {
+        tray_icon_for(crate::lifecycle::TrayIconState::Idle)
     }
 
     // --- single instance: second launch focuses the primary and exits ---
@@ -418,6 +470,9 @@ pub fn launch() {
                 window: None,
             });
             cx.on_action(on_tray_open);
+            cx.on_action(on_tray_quick_ask);
+            cx.on_action(on_tray_pause_all);
+            cx.on_action(on_tray_approvals);
             cx.on_action(on_tray_quit);
             cx.set_dock_menu(vec![
                 MenuItem::action("Open", TrayOpen),

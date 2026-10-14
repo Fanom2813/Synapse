@@ -121,17 +121,96 @@ impl WindowLifecycle {
     }
 }
 
-/// Tray commands (gpui-tray menu: Open, Quit).
+/// Tray icon states: idle (nothing running), working (≥1 active run),
+/// needs-you (pending approvals take precedence over working).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrayIconState {
+    Idle,
+    Working,
+    NeedsYou,
+}
+
+impl TrayIconState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TrayIconState::Idle => "idle",
+            TrayIconState::Working => "working",
+            TrayIconState::NeedsYou => "needs-you",
+        }
+    }
+}
+
+/// One active run shown in the tray menu.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrayRun {
+    pub id: String,
+    pub title: String,
+    pub phase: String,
+}
+
+impl TrayRun {
+    pub fn new(id: &str, title: &str, phase: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            title: title.to_string(),
+            phase: phase.to_string(),
+        }
+    }
+
+    /// Row label: "• {title} — {phase}".
+    pub fn label(&self) -> String {
+        format!("• {} — {}", self.title, self.phase)
+    }
+}
+
+/// Toolkit-free snapshot of everything the tray menu shows.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TraySnapshot {
+    pub runs: Vec<TrayRun>,
+    pub pending_approvals: u32,
+    /// True when every active run is paused (menu offers Resume all).
+    pub all_paused: bool,
+}
+
+impl TraySnapshot {
+    pub fn idle() -> Self {
+        Self::default()
+    }
+}
+
+/// Icon state for a snapshot: needs-you wins over working wins over idle.
+pub fn tray_icon_state(snapshot: &TraySnapshot) -> TrayIconState {
+    if snapshot.pending_approvals > 0 {
+        TrayIconState::NeedsYou
+    } else if !snapshot.runs.is_empty() {
+        TrayIconState::Working
+    } else {
+        TrayIconState::Idle
+    }
+}
+
+/// Tray commands (gpui-tray menu: Open, runs, approvals, pause-all,
+/// quick-ask, Quit; see UI.md §2.7).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrayCommand {
     Open,
+    ShowRun(String),
+    ShowApprovals,
+    PauseAll,
+    ResumeAll,
+    QuickAsk,
     Quit,
 }
 
 /// Effect of a tray command on the lifecycle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrayEffect {
     Open(OpenEffect),
+    ShowRun(String),
+    ShowApprovals,
+    PauseAll,
+    ResumeAll,
+    QuickAsk,
     Quit,
 }
 
@@ -145,21 +224,73 @@ impl TrayEffect {
 pub fn apply_tray_command(lifecycle: &mut WindowLifecycle, cmd: TrayCommand) -> TrayEffect {
     match cmd {
         TrayCommand::Open => TrayEffect::Open(lifecycle.open_window()),
+        TrayCommand::ShowRun(id) => TrayEffect::ShowRun(id),
+        TrayCommand::ShowApprovals => TrayEffect::ShowApprovals,
+        TrayCommand::PauseAll => TrayEffect::PauseAll,
+        TrayCommand::ResumeAll => TrayEffect::ResumeAll,
+        TrayCommand::QuickAsk => TrayEffect::QuickAsk,
         TrayCommand::Quit => TrayEffect::Quit,
     }
 }
 
-/// Items in the tray menu (UI.md §7 subset for M1: Open, Quit).
-pub fn tray_menu_items() -> Vec<&'static str> {
-    vec!["Open", "Quit"]
+/// Items in the tray menu (UI.md §2.7): Open Synapse, active runs with
+/// phase, pending approvals, Pause all / Resume all, Quick ask, Quit.
+///
+/// Kept as owned strings because run rows embed live titles + phases.
+pub fn tray_menu_items() -> Vec<String> {
+    tray_menu_labels(&TraySnapshot::idle())
+}
+
+/// Full tray menu labels for a snapshot.
+pub fn tray_menu_labels(snapshot: &TraySnapshot) -> Vec<String> {
+    let mut items = vec!["Open Synapse".to_string()];
+    if snapshot.runs.is_empty() {
+        items.push("No active runs".to_string());
+    } else {
+        for run in &snapshot.runs {
+            items.push(run.label());
+        }
+    }
+    if snapshot.pending_approvals > 0 {
+        items.push(format!("Pending approvals ({})", snapshot.pending_approvals));
+    } else {
+        items.push("Pending approvals".to_string());
+    }
+    if !snapshot.runs.is_empty() {
+        if snapshot.all_paused {
+            items.push("Resume All".to_string());
+        } else {
+            items.push("Pause All".to_string());
+        }
+    }
+    items.push("Quick Ask".to_string());
+    items.push("Quit".to_string());
+    items
 }
 
 /// Parse a tray menu label back into a command.
 pub fn parse_tray_menu_item(label: &str) -> Option<TrayCommand> {
     match label {
-        "Open" => Some(TrayCommand::Open),
+        "Open" | "Open Synapse" => Some(TrayCommand::Open),
         "Quit" => Some(TrayCommand::Quit),
-        _ => None,
+        "Quick Ask" | "Quick ask" => Some(TrayCommand::QuickAsk),
+        "Pause All" | "Pause all" => Some(TrayCommand::PauseAll),
+        "Resume All" | "Resume all" => Some(TrayCommand::ResumeAll),
+        "Pending approvals" => Some(TrayCommand::ShowApprovals),
+        "No active runs" => None,
+        _ => {
+            if let Some(rest) = label.strip_prefix("Pending approvals (") {
+                if rest.ends_with(')') {
+                    return Some(TrayCommand::ShowApprovals);
+                }
+            }
+            for prefix in ["• ", "● "] {
+                if let Some(rest) = label.strip_prefix(prefix) {
+                    return Some(TrayCommand::ShowRun(rest.to_string()));
+                }
+            }
+            None
+        }
     }
 }
 
@@ -331,9 +462,21 @@ mod tests {
 
     #[test]
     fn lifecycle_tray_can_open_or_quit() {
-        assert_eq!(tray_menu_items(), vec!["Open", "Quit"]);
+        // Idle menu still offers open + quit (plus quick-ask).
+        let idle = tray_menu_items();
+        assert!(idle.contains(&"Open Synapse".to_string()));
+        assert!(idle.contains(&"Quit".to_string()));
+        assert!(idle.contains(&"Quick Ask".to_string()));
         assert_eq!(parse_tray_menu_item("Open"), Some(TrayCommand::Open));
+        assert_eq!(
+            parse_tray_menu_item("Open Synapse"),
+            Some(TrayCommand::Open)
+        );
         assert_eq!(parse_tray_menu_item("Quit"), Some(TrayCommand::Quit));
+        assert_eq!(
+            parse_tray_menu_item("Quick Ask"),
+            Some(TrayCommand::QuickAsk)
+        );
         assert_eq!(parse_tray_menu_item("Nope"), None);
 
         let mut w = WindowLifecycle::new_visible();
@@ -348,6 +491,118 @@ mod tests {
             TrayEffect::Quit
         );
         assert!(TrayEffect::Quit.quits());
+    }
+
+    #[test]
+    fn tray_menu_shows_runs_phases_approvals_and_actions() {
+        let snapshot = TraySnapshot {
+            runs: vec![
+                TrayRun::new("r1", "Market study", "Searching"),
+                TrayRun::new("r2", "Uganda fintech", "Reading"),
+            ],
+            pending_approvals: 2,
+            all_paused: false,
+        };
+        let items = tray_menu_labels(&snapshot);
+        assert!(items.contains(&"Open Synapse".to_string()));
+        assert!(items.iter().any(|l| l.contains("Market study") && l.contains("Searching")));
+        assert!(items.iter().any(|l| l.contains("Uganda fintech") && l.contains("Reading")));
+        assert!(items.iter().any(|l| l.contains("Pending approvals") && l.contains('2')));
+        assert!(items.contains(&"Pause All".to_string()));
+        assert!(items.contains(&"Quick Ask".to_string()));
+        assert!(items.contains(&"Quit".to_string()));
+        // Every actionable row parses back.
+        for label in &items {
+            if label == "No active runs" {
+                assert_eq!(parse_tray_menu_item(label), None);
+            } else {
+                assert!(
+                    parse_tray_menu_item(label).is_some(),
+                    "menu row has no command: {label}"
+                );
+            }
+        }
+        // Paused fleet offers Resume all instead.
+        let paused = TraySnapshot {
+            all_paused: true,
+            ..snapshot.clone()
+        };
+        let items = tray_menu_labels(&paused);
+        assert!(items.contains(&"Resume All".to_string()));
+        assert!(!items.contains(&"Pause All".to_string()));
+        // Idle menu names the empty state and skips pause-all.
+        let idle = tray_menu_labels(&TraySnapshot::idle());
+        assert!(idle.contains(&"No active runs".to_string()));
+        assert!(!idle.contains(&"Pause All".to_string()));
+        assert!(!idle.contains(&"Resume All".to_string()));
+    }
+
+    #[test]
+    fn tray_menu_parse_and_apply_cover_all_actions() {
+        assert_eq!(
+            parse_tray_menu_item("Pause All"),
+            Some(TrayCommand::PauseAll)
+        );
+        assert_eq!(
+            parse_tray_menu_item("Resume All"),
+            Some(TrayCommand::ResumeAll)
+        );
+        assert_eq!(
+            parse_tray_menu_item("Pending approvals (3)"),
+            Some(TrayCommand::ShowApprovals)
+        );
+        assert!(matches!(
+            parse_tray_menu_item("• Market study — Searching"),
+            Some(TrayCommand::ShowRun(_))
+        ));
+        let mut w = WindowLifecycle::new_visible();
+        assert_eq!(
+            apply_tray_command(&mut w, TrayCommand::QuickAsk),
+            TrayEffect::QuickAsk
+        );
+        assert_eq!(
+            apply_tray_command(&mut w, TrayCommand::PauseAll),
+            TrayEffect::PauseAll
+        );
+        assert_eq!(
+            apply_tray_command(&mut w, TrayCommand::ResumeAll),
+            TrayEffect::ResumeAll
+        );
+        assert_eq!(
+            apply_tray_command(&mut w, TrayCommand::ShowApprovals),
+            TrayEffect::ShowApprovals
+        );
+    }
+
+    #[test]
+    fn tray_menu_icon_reflects_idle_working_and_needs_you() {
+        assert_eq!(
+            tray_icon_state(&TraySnapshot::idle()),
+            TrayIconState::Idle
+        );
+        let working = TraySnapshot {
+            runs: vec![TrayRun::new("r1", "Market study", "Searching")],
+            pending_approvals: 0,
+            all_paused: false,
+        };
+        assert_eq!(tray_icon_state(&working), TrayIconState::Working);
+        // Paused-but-live runs still count as working.
+        let paused = TraySnapshot {
+            all_paused: true,
+            ..working.clone()
+        };
+        assert_eq!(tray_icon_state(&paused), TrayIconState::Working);
+        // Approvals win over everything (even idle).
+        let needs_you = TraySnapshot {
+            pending_approvals: 1,
+            ..working.clone()
+        };
+        assert_eq!(tray_icon_state(&needs_you), TrayIconState::NeedsYou);
+        let approvals_only = TraySnapshot {
+            pending_approvals: 2,
+            ..TraySnapshot::idle()
+        };
+        assert_eq!(tray_icon_state(&approvals_only), TrayIconState::NeedsYou);
     }
 
     #[test]

@@ -13,6 +13,7 @@ pub mod cli_agents_ui;
 pub mod connectors;
 pub mod conversation_map;
 pub mod empty;
+pub mod global_search;
 pub mod icons;
 pub mod layout;
 pub mod lifecycle;

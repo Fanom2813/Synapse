@@ -6,8 +6,8 @@ pub mod store;
 pub mod vector;
 
 pub use models::{
-    new_id, Agent, Conversation, Memory, Message, NewAgent, NewMemory, NewMessage, NewProject,
-    NewSkill, NewToolCall, Project, Skill, ToolCall,
+    new_id, Agent, ArtifactHit, Conversation, Memory, Message, NewAgent, NewMemory, NewMessage,
+    NewProject, NewSkill, NewToolCall, Project, Skill, Source, ToolCall,
 };
 pub use store::{Result, Store, StoreError};
 

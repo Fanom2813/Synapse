@@ -11,8 +11,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 use thiserror::Error;
 
 use crate::models::{
-    Agent, Conversation, Memory, Message, NewAgent, NewMemory, NewMessage, NewProject, NewSkill,
-    NewToolCall, Project, Skill, ToolCall,
+    Agent, ArtifactHit, Conversation, Memory, Message, NewAgent, NewMemory, NewMessage, NewProject,
+    NewSkill, NewToolCall, Project, Skill, Source, ToolCall,
 };
 use crate::schema::migrations;
 
@@ -335,6 +335,166 @@ impl Store {
                  FROM messages_fts f JOIN messages m ON m.rowid=f.rowid WHERE messages_fts MATCH ?1 LIMIT ?2",
             )?;
             let rows: Vec<_> = st.query_map(params![query, limit], row_to_message)?.collect::<std::result::Result<Vec<_>, _>>()?; Ok(rows)
+        })
+    }
+
+    /// Archive search: FTS over messages with their project id (via
+    /// conversations). Falls back to LIKE when FTS cannot parse the query.
+    pub fn search_messages_with_project(
+        &self,
+        query: &str,
+        limit: i64,
+    ) -> Result<Vec<(Message, String)>> {
+        let q = query.trim();
+        if q.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.with_reader(|c| {
+            let try_fts: std::result::Result<Vec<(Message, String)>, rusqlite::Error> = (|| {
+                let mut st = c.prepare(
+                    "SELECT m.id,m.conversation_id,m.run_id,m.from_id,m.to_json,m.kind,m.reply_to,m.thread_id,m.body,m.meta,m.created_at,c.project_id
+                     FROM messages_fts f JOIN messages m ON m.rowid=f.rowid JOIN conversations c ON c.id=m.conversation_id WHERE messages_fts MATCH ?1 LIMIT ?2",
+                )?;
+                let rows = st
+                    .query_map(params![q, limit], |r| {
+                        Ok((row_to_message(r)?, r.get::<_, String>(11)?))
+                    })?
+                    .collect::<std::result::Result<Vec<_>, _>>()?;
+                Ok(rows)
+            })();
+            if let Ok(rows) = try_fts {
+                return Ok(rows);
+            }
+            let like = format!("%{q}%");
+            let mut st = c.prepare(
+                "SELECT m.id,m.conversation_id,m.run_id,m.from_id,m.to_json,m.kind,m.reply_to,m.thread_id,m.body,m.meta,m.created_at,c.project_id
+                 FROM messages m JOIN conversations c ON c.id=m.conversation_id WHERE m.body LIKE ?1 LIMIT ?2",
+            )?;
+            let rows = st
+                .query_map(params![like, limit], |r| {
+                    Ok((row_to_message(r)?, r.get::<_, String>(11)?))
+                })?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+    }
+
+    // -- archive: sources + artifacts (global search) ---------------------
+    pub fn save_source(
+        &self,
+        id: &str,
+        project_id: &str,
+        url: &str,
+        title: &str,
+        content_md: &str,
+    ) -> Result<Source> {
+        self.with_writer(|c| {
+            c.execute(
+                "INSERT INTO sources (id,project_id,url,title,content_md) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,url=excluded.url,title=excluded.title,content_md=excluded.content_md",
+                params![id, project_id, url, title, content_md],
+            )?;
+            c.query_row(
+                "SELECT id,project_id,url,title,content_md FROM sources WHERE id=?1",
+                params![id],
+                |r| {
+                    Ok(Source {
+                        id: r.get(0)?,
+                        project_id: r.get(1)?,
+                        url: r.get(2)?,
+                        title: r.get(3)?,
+                        content_md: r.get(4)?,
+                    })
+                },
+            )
+            .map_err(StoreError::from)
+        })
+    }
+
+    pub fn search_sources(&self, query: &str, limit: i64) -> Result<Vec<Source>> {
+        let q = query.trim();
+        if q.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.with_reader(|c| {
+            let try_fts: std::result::Result<Vec<Source>, rusqlite::Error> = (|| {
+                let mut st = c.prepare(
+                    "SELECT s.id,s.project_id,s.url,s.title,s.content_md FROM sources_fts f JOIN sources s ON s.rowid=f.rowid WHERE sources_fts MATCH ?1 LIMIT ?2",
+                )?;
+                let rows: Vec<Source> = st
+                    .query_map(params![q, limit], row_to_source)?
+                    .collect::<std::result::Result<Vec<_>, _>>()?;
+                Ok(rows)
+            })();
+            if let Ok(rows) = try_fts {
+                return Ok(rows);
+            }
+            let like = format!("%{q}%");
+            let mut st = c.prepare(
+                "SELECT id,project_id,url,title,content_md FROM sources WHERE title LIKE ?1 OR content_md LIKE ?1 LIMIT ?2",
+            )?;
+            let rows: Vec<Source> = st
+                .query_map(params![like, limit], row_to_source)?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+    }
+
+    pub fn save_artifact(&self, id: &str, project_id: &str, title: &str, kind: &str) -> Result<()> {
+        self.with_writer(|c| {
+            c.execute(
+                "INSERT INTO artifacts (id,project_id,title,kind) VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,title=excluded.title,kind=excluded.kind",
+                params![id, project_id, title, kind],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn save_artifact_version(
+        &self,
+        artifact_id: &str,
+        version: i64,
+        body_md: &str,
+        changelog: &str,
+    ) -> Result<()> {
+        self.with_writer(|c| {
+            c.execute(
+                "INSERT INTO artifact_versions (artifact_id,version,body_md,changelog) VALUES (?1,?2,?3,?4) ON CONFLICT(artifact_id,version) DO UPDATE SET body_md=excluded.body_md,changelog=excluded.changelog",
+                params![artifact_id, version, body_md, changelog],
+            )?;
+            c.execute(
+                "UPDATE artifacts SET current_version=?1 WHERE id=?2",
+                params![version, artifact_id],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn search_artifacts(&self, query: &str, limit: i64) -> Result<Vec<ArtifactHit>> {
+        let q = query.trim();
+        if q.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.with_reader(|c| {
+            let try_fts: std::result::Result<Vec<ArtifactHit>, rusqlite::Error> = (|| {
+                let mut st = c.prepare(
+                    "SELECT a.id,a.project_id,a.title,v.version,v.body_md FROM artifact_versions_fts f JOIN artifact_versions v ON v.rowid=f.rowid JOIN artifacts a ON a.id=v.artifact_id WHERE artifact_versions_fts MATCH ?1 LIMIT ?2",
+                )?;
+                let rows: Vec<ArtifactHit> = st
+                    .query_map(params![q, limit], row_to_artifact_hit)?
+                    .collect::<std::result::Result<Vec<_>, _>>()?;
+                Ok(rows)
+            })();
+            if let Ok(rows) = try_fts {
+                return Ok(rows);
+            }
+            let like = format!("%{q}%");
+            let mut st = c.prepare(
+                "SELECT a.id,a.project_id,a.title,v.version,v.body_md FROM artifact_versions v JOIN artifacts a ON a.id=v.artifact_id WHERE v.body_md LIKE ?1 OR a.title LIKE ?1 LIMIT ?2",
+            )?;
+            let rows: Vec<ArtifactHit> = st
+                .query_map(params![like, limit], row_to_artifact_hit)?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            Ok(rows)
         })
     }
 
@@ -713,6 +873,26 @@ impl Store {
             Ok(n)
         })
     }
+}
+
+fn row_to_source(r: &rusqlite::Row<'_>) -> rusqlite::Result<Source> {
+    Ok(Source {
+        id: r.get(0)?,
+        project_id: r.get(1)?,
+        url: r.get(2)?,
+        title: r.get(3)?,
+        content_md: r.get(4)?,
+    })
+}
+
+fn row_to_artifact_hit(r: &rusqlite::Row<'_>) -> rusqlite::Result<ArtifactHit> {
+    Ok(ArtifactHit {
+        artifact_id: r.get(0)?,
+        project_id: r.get(1)?,
+        title: r.get(2)?,
+        version: r.get(3)?,
+        body_md: r.get(4)?,
+    })
 }
 
 fn open_conn(path: &Path) -> Result<Connection> {

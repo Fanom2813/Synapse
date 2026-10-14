@@ -178,6 +178,26 @@ pub struct NewMemory {
     pub pinned: bool,
 }
 
+/// One row of the `sources` table (ARCHITECTURE.md §3).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Source {
+    pub id: String,
+    pub project_id: String,
+    pub url: String,
+    pub title: String,
+    pub content_md: String,
+}
+
+/// One artifact row plus its latest version body (for archive search).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArtifactHit {
+    pub artifact_id: String,
+    pub project_id: String,
+    pub title: String,
+    pub version: i64,
+    pub body_md: String,
+}
+
 /// Unique id helper (`prefix` + millis + counter) without extra dependencies.
 pub fn new_id(prefix: &str) -> String {
     use std::sync::atomic::{AtomicU64, Ordering};

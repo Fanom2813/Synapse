@@ -7094,6 +7094,7 @@ dependencies = [
  "synapse-core",
  "synapse-llm",
  "synapse-personas",
+ "synapse-research",
  "synapse-store",
  "tokio",
  "tokio-util",

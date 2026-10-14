@@ -11,4 +11,5 @@ synapse-app = { path = "../synapse-app" }
 synapse-llm = { path = "../synapse-llm" }
 synapse-personas = { path = "../synapse-personas" }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 serde_json = { workspace = true }

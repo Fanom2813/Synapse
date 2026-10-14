@@ -16,6 +16,7 @@ use crate::redact::Redactor;
 
 /// Tool names exposed to agents (function-calling + in-process MCP server).
 pub const TEAM_TOOL_NAMES: &[&str] = &[
+    "say",
     "ask_agent",
     "answer",
     "challenge",
@@ -77,6 +78,14 @@ fn str_prop(desc: &str) -> Value {
 /// Function-calling specs for every team tool.
 pub fn team_tool_specs() -> Vec<TeamToolSpec> {
     vec![
+        TeamToolSpec {
+            name: "say".into(),
+            description: "Say something to the room (ordinary contribution).".into(),
+            parameters: schema(
+                &[("text", "string", str_prop("What to say to the room (markdown)"))],
+                &["text"],
+            ),
+        },
         TeamToolSpec {
             name: "ask_agent".into(),
             description: "Ask another agent a question. They answer at a safe point.".into(),
@@ -293,6 +302,10 @@ impl TeamTools {
     /// persisted envelope (with its assigned `seq`).
     pub fn call(&self, tool: &str, args: Value) -> Result<Envelope, TeamToolError> {
         match tool {
+            "say" => {
+                let text = req_str(tool, &args, "text", "what to say to the room")?;
+                self.say(&text)
+            }
             "ask_agent" => {
                 let agent = req_str(tool, &args, "agent", "the agent id to ask")?;
                 let question = req_str(tool, &args, "question", "the question to ask")?;
@@ -360,6 +373,18 @@ impl TeamTools {
             }
             other => Err(TeamToolError::UnknownTool(other.into())),
         }
+    }
+
+    /// Say something to the room (`Say`, addressed to the room).
+    pub fn say(&self, text: &str) -> Result<Envelope, TeamToolError> {
+        let text = non_empty("say", "text", text, "what to say to the room")?;
+        self.store(
+            Recipients::Room,
+            Kind::Say,
+            self.redact(&text),
+            None,
+            vec![],
+        )
     }
 
     /// Ask another agent a question (`Ask`, addressed to that agent).
@@ -782,6 +807,35 @@ mod team_tools_tests {
         assert!(tools.delegate("mira", "", "d").is_err());
         assert!(tools.propose("").is_err());
         assert!(tools.finish("").is_err());
+    }
+
+    #[test]
+    fn team_tools_say_is_listed_dispatched_and_published_to_room() {
+        // Listed in exported names and schemas.
+        assert!(TEAM_TOOL_NAMES.contains(&"say"));
+        let specs = team_tool_specs();
+        let say_spec = specs.iter().find(|s| s.name == "say").expect("say spec");
+        assert!(say_spec.parameters.get("properties").unwrap().get("text").is_some());
+
+        let (bus, tools) = setup("lead");
+        // Dispatched via typed method: room-addressed Say, redacted.
+        let secret = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";
+        let env = tools
+            .say(&format!("Hello room {secret}"))
+            .unwrap();
+        assert_eq!(env.to, Recipients::Room);
+        assert!(matches!(env.kind, Kind::Say));
+        assert!(!env.body.contains(secret));
+        assert!(env.body.contains("[redacted:"));
+        assert_eq!(bus.history("c1", 0, usize::MAX).len(), 1);
+        assert_eq!(last(&bus).id, env.id);
+
+        // Dispatched via generic call() by name.
+        let env2 = tools.call("say", json!({"text": "via dispatch"})).unwrap();
+        assert!(matches!(env2.kind, Kind::Say));
+        assert_eq!(env2.to, Recipients::Room);
+        assert_eq!(env2.body, "via dispatch");
+        assert_eq!(bus.history("c1", 0, usize::MAX).len(), 2);
     }
 
     #[test]

@@ -13,6 +13,8 @@ synapse-personas = { path = "../synapse-personas" }
 synapse-research = { path = "../synapse-research" }
 synapse-tools = { path = "../synapse-tools" }
 synapse-mcp = { path = "../synapse-mcp" }
-tokio = { workspace = true }
+synapse-acp = { path = "../synapse-acp" }
+agent-client-protocol = { workspace = true }
+tokio = { workspace = true, features = ["process"] }
 tokio-util = { workspace = true }
 serde_json = { workspace = true }

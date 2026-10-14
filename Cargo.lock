@@ -7631,7 +7631,9 @@ dependencies = [
 name = "synapse-acceptance"
 version = "0.1.0"
 dependencies = [
+ "agent-client-protocol",
  "serde_json",
+ "synapse-acp",
  "synapse-app",
  "synapse-core",
  "synapse-llm",

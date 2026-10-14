@@ -7654,6 +7654,7 @@ dependencies = [
  "serde",
  "serde_json",
  "synapse-llm",
+ "synapse-tools",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",

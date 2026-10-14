@@ -18,11 +18,13 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
+use crate::permissions::{handle_agent_request, PermissionBridge};
 use agent_client_protocol as acp;
 use serde_json::Value;
 use synapse_llm::{
     AgentEvent, LlmError, ModelBackend, Role, ToolCallRequest, TurnOutput, TurnRequest, Usage,
 };
+use synapse_tools::permissions::Engine;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::{mpsc, oneshot};
@@ -148,13 +150,14 @@ async fn io_loop(
     writer: mpsc::UnboundedSender<String>,
     pending: Arc<std::sync::Mutex<HashMap<i64, Pending>>>,
     updates: mpsc::UnboundedSender<acp::SessionNotification>,
+    bridge: PermissionBridge,
 ) {
     let mut lines = BufReader::new(stdout).lines();
     loop {
         tokio::select! {
             line = lines.next_line() => {
                 match line {
-                    Ok(Some(line)) => handle_line(&line, &pending, &updates, &writer),
+                    Ok(Some(line)) => handle_line(&line, &pending, &updates, &writer, &bridge),
                     _ => break,
                 }
             }
@@ -184,6 +187,7 @@ fn handle_line(
     pending: &Arc<std::sync::Mutex<HashMap<i64, Pending>>>,
     updates: &mpsc::UnboundedSender<acp::SessionNotification>,
     writer: &mpsc::UnboundedSender<String>,
+    bridge: &PermissionBridge,
 ) {
     let msg: Value = match serde_json::from_str(line) {
         Ok(v) => v,
@@ -191,16 +195,28 @@ fn handle_line(
     };
     if let Some(id) = msg.get("id").and_then(Value::as_i64) {
         if msg.get("method").is_some() {
-            // Agent -> client request (permission, fs, terminal...): we run
-            // headless, so decline and let the agent carry on.
-            let _ = writer.send(
-                serde_json::json!({
+            // Agent -> client request (permission, fs, terminal...): answer
+            // through the permission bridge so CLI agents share the same
+            // approval flow + project-root confinement as built-in tools.
+            // `Ask` fails closed headless (first reject option); the
+            // bridge's `NeedsApproval` path is for UI-driven callers.
+            let method = msg.get("method").and_then(Value::as_str).unwrap_or("");
+            let params = msg.get("params").cloned().unwrap_or(Value::Null);
+            let reply = match handle_agent_request(bridge, method, &params) {
+                Ok(result) => serde_json::json!({
                     "jsonrpc": "2.0",
                     "id": id,
-                    "error": { "code": -32601, "message": "method not found" },
+                    "result": result,
                 })
                 .to_string(),
-            );
+                Err(message) => serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "error": { "code": -32601, "message": message },
+                })
+                .to_string(),
+            };
+            let _ = writer.send(reply);
             return;
         }
         let tx = pending.lock().expect("acp pending").remove(&id);
@@ -260,6 +276,12 @@ impl AcpSession {
         let (wtx, wrx) = mpsc::unbounded_channel::<String>();
         let (utx, urx) = mpsc::unbounded_channel::<acp::SessionNotification>();
         let pending: Arc<std::sync::Mutex<HashMap<i64, Pending>>> = Arc::default();
+        // Permission bridge confined to the session cwd: the same
+        // allow/ask/deny engine as built-in tools, so `session/
+        // request_permission` + `fs/*` + `terminal/*` stay inside the
+        // project and ask through the same approval flow.
+        let bridge = PermissionBridge::new(Engine::new(), config.cwd.clone());
+        let capabilities = bridge.client_capabilities();
         let io = tokio::spawn(io_loop(
             stdout,
             stdin,
@@ -267,6 +289,7 @@ impl AcpSession {
             wtx.clone(),
             pending.clone(),
             utx,
+            bridge,
         ));
         let rpc = Rpc {
             next_id: AtomicI64::new(0),
@@ -278,7 +301,7 @@ impl AcpSession {
 
         let params = serde_json::to_value(acp::InitializeRequest {
             protocol_version: acp::V1,
-            client_capabilities: acp::ClientCapabilities::default(),
+            client_capabilities: capabilities,
             meta: None,
         })
         .expect("initialize params");

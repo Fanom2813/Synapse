@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 pub mod research_loop;
 pub mod reader;
 pub mod perspectives;
+pub mod factcheck;
 
 use serde::{Deserialize, Serialize};
 

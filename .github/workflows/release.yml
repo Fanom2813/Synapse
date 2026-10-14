@@ -82,7 +82,9 @@ jobs:
           if [ -n "${{ matrix.target }}" ]; then
             rustup target add "${{ matrix.target }}"
             export CARGO_BUILD_TARGET="${{ matrix.target }}"
-            args+=(--target "${{ matrix.target }}" --binaries-dir "target/${{ matrix.target }}/release")
+            # cargo-packager ignores --binaries-dir when a config file sets binaries-dir, so point a config copy at the target dir.
+            sed "s#^binaries-dir = .*#binaries-dir = \"target/${{ matrix.target }}/release\"#" Packager.toml > Packager.target.toml
+            args+=(--target "${{ matrix.target }}" -c Packager.target.toml)
           fi
           ./target/release/synapse-packager "${args[@]}"
 

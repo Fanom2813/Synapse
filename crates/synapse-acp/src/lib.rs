@@ -4,10 +4,12 @@
 //! the ACP registry, and list supported installed agents with available
 //! adapter and login-state information.
 
+pub mod client;
 pub mod detect;
 pub mod path;
 pub mod registry;
 
+pub use client::{config_from_adapter, default_cwd, AcpBackend, AcpConfig, AcpError, AcpSession};
 pub use detect::{detect_installed, AvailableAdapter, DetectedAgent, LoginState};
 pub use path::{effective_path_dirs, login_shell_path, split_path_var};
 pub use registry::{fetch_registry, parse_registry, RegistryAgent, RegistryError};

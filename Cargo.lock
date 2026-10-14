@@ -129,6 +129,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "agent-client-protocol"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "39863591e958f08e32bb184e9eb7566e15df96c37ca011e6511b9a1b4573173b"
+dependencies = [
+ "anyhow",
+ "async-broadcast",
+ "futures",
+ "log",
+ "parking_lot",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7632,12 +7648,15 @@ dependencies = [
 name = "synapse-acp"
 version = "0.1.0"
 dependencies = [
+ "agent-client-protocol",
  "dirs 6.0.0",
  "reqwest",
  "serde",
  "serde_json",
+ "synapse-llm",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-util",
  "wiremock",
 ]
 

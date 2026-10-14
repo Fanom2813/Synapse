@@ -1,6 +1,7 @@
 //! synapse-core: domain types, team bus, orchestrator (see docs/ARCHITECTURE.md).
 
 pub mod agents;
+pub mod attachments;
 pub mod bus;
 pub mod orchestrator;
 pub mod projects;
@@ -12,6 +13,10 @@ pub mod worker;
 pub use agents::{
     api_draft, validate_draft, Agent, AgentBackend, AgentDraft, AgentStore, ApiBackend, CliBackend,
     StoreError as AgentStoreError, ThinkingLevel, ValidatedAgent, ValidationError, KNOWN_TOOLS,
+};
+pub use attachments::{
+    AttachmentError, AttachmentKind, AttachmentStore, DeliveredAttachment, RecipientCapabilities,
+    StoredAttachment, INLINE_TEXT_LIMIT, MAX_ATTACHMENTS_PER_MESSAGE, MAX_ATTACHMENT_BYTES,
 };
 pub use bus::{
     AttachmentRef, BusError, Envelope, Event, Kind, Participant, Priority, Recipients, SourceRef,

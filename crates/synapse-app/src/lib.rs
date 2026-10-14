@@ -2,6 +2,7 @@
 
 pub mod agent_editor;
 pub mod app_dirs;
+pub mod attachments_ui;
 pub mod avatar;
 pub mod avatar_packs;
 pub mod chat_view;

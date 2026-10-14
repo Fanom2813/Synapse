@@ -23,6 +23,7 @@ pub mod logging;
 pub mod mcp_settings;
 pub mod memory_screens;
 pub mod notifications;
+pub mod onboarding;
 pub mod perf_probe;
 pub mod persona_library;
 pub mod quick_ask;

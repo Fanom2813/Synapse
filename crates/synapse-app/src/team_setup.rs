@@ -318,7 +318,7 @@ mod tests {
     #[test]
     fn new_projects_start_with_the_default_team_and_follow_engine_settings() {
         let store = Store::open_in_memory().expect("store");
-        let project = create_project(&store, "Study").expect("project").project;
+        let project = create_project(&store).expect("project").project;
         let team = project_team(&store, &project.id);
         assert!(team.iter().any(|a| a.name == "Lead"));
         assert!(team.len() >= 8);

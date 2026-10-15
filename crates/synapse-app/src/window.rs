@@ -156,33 +156,23 @@ pub fn chat_config() -> (
     String,
     ChatPersist,
 ) {
-    use secrecy::ExposeSecret as _;
-    use synapse_llm::keys::SecretStore as _;
     let store = synapse_store::Store::open(app_dirs::db_path()).ok();
     let catalog = crate::custom_providers::catalog_with_custom(store.as_ref());
     let mut provider_id = String::new();
     let mut model = String::from("gpt-4o-mini");
-    let mut api_key = None;
-    let mut base_url = None;
+    let mut backend = None;
     if let (Some(catalog), Some(store)) = (catalog.as_ref(), store.as_ref()) {
         if let Ok(settings) = ProvidersSettings::load(store) {
             if let Some((p, m)) = settings.default_for(ModelRole::Lead) {
-                provider_id = p.clone();
-                model = m.clone();
-                base_url = settings.base_url_for(catalog, &p);
-                api_key = synapse_llm::keys::KeychainSecretStore
-                    .get("provider", &p)
-                    .ok()
-                    .flatten()
-                    .map(|s| s.expose_secret().to_string());
+                backend = Some(role_backend(&settings, catalog, &p, &m));
+                provider_id = p;
+                model = m;
             }
         }
     }
-    let backend = std::sync::Arc::new(synapse_llm::GenaiBackend::new(
-        model.clone(),
-        api_key,
-        base_url,
-    ));
+    let backend = backend.unwrap_or_else(|| {
+        std::sync::Arc::new(synapse_llm::GenaiBackend::new(model.clone(), None, None))
+    });
     let persist = ChatPersist {
         store: store.map(std::sync::Arc::new),
         catalog: catalog.map(std::sync::Arc::new),
@@ -190,6 +180,37 @@ pub fn chat_config() -> (
         model_id: model.clone(),
     };
     (backend, model, persist)
+}
+
+/// The backend for `provider`/`model` with its saved key and endpoint.
+fn role_backend(
+    settings: &ProvidersSettings,
+    catalog: &synapse_llm::catalog::Catalog,
+    provider: &str,
+    model: &str,
+) -> std::sync::Arc<synapse_llm::GenaiBackend> {
+    use secrecy::ExposeSecret as _;
+    use synapse_llm::keys::SecretStore as _;
+    let api_key = synapse_llm::keys::KeychainSecretStore
+        .get("provider", provider)
+        .ok()
+        .flatten()
+        .map(|s| s.expose_secret().to_string());
+    std::sync::Arc::new(synapse_llm::GenaiBackend::new(
+        model.to_string(),
+        api_key,
+        settings.base_url_for(catalog, provider),
+    ))
+}
+
+/// The small model chosen on the Models page, for quick jobs like naming a
+/// project. `None` when none is set: callers use the Lead model.
+pub fn small_config() -> Option<(std::sync::Arc<synapse_llm::GenaiBackend>, String)> {
+    let store = synapse_store::Store::open(app_dirs::db_path()).ok()?;
+    let catalog = crate::custom_providers::catalog_with_custom(Some(&store))?;
+    let settings = ProvidersSettings::load(&store).ok()?;
+    let (provider, model) = settings.default_for(ModelRole::Small)?;
+    Some((role_backend(&settings, &catalog, &provider, &model), model))
 }
 
 pub(crate) const CHAT_PROJECT_ID: &str = "chat";
@@ -324,6 +345,7 @@ pub fn launch() {
             let (backend, model, persist) = chat_config();
             let chat = cx.new(|cx| {
                 let mut view = ChatView::new(window, cx, backend, model).with_persist(persist);
+                view.set_small(small_config());
                 if let Some(store) = view.persist_store() {
                     let project = shell.open_project_id.as_deref().and_then(|id| {
                         let name = shell.title.project_name.clone().unwrap_or_default();

@@ -92,7 +92,7 @@ fn room_nav(view: &ShellView, cx: &mut Context<ShellView>) -> AnyElement {
                 .child(delete),
         );
     }
-    let new_project = cx.listener(|this, _, window, cx| this.open_new_project_dialog(window, cx));
+    let new_project = cx.listener(|this, _, window, cx| this.create_new_project(window, cx));
     let list = match view.shell.sidebar_empty() {
         Some(e) => v_flex()
             .flex_1()
@@ -124,7 +124,7 @@ fn room_nav(view: &ShellView, cx: &mut Context<ShellView>) -> AnyElement {
                         .icon(icons::PLUS)
                         .tooltip("New project")
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.open_new_project_dialog(window, cx)
+                            this.create_new_project(window, cx)
                         })),
                 ),
         )

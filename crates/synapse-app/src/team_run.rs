@@ -6,9 +6,9 @@
 //! next, together, each seeing the whole chat; their replies may ping others
 //! (a critic sends a gap back to the researcher, the researcher answers to
 //! the analyst), and so on until a round pings nobody. That is the end of the
-//! meeting. If nobody was pinged at all, the others listen and choose whether
-//! to chime in (say hello back, add something, or pass). Every speaker
-//! streams into the chat under their own name.
+//! meeting. Every speaker streams into the chat under their own name; the
+//! view shows the first speaker (the orchestrator, or the member the user
+//! @mentioned) in full and everyone else as a collapsed working note.
 //!
 //! Bounded (`Limits`): pings per meeting and per reply, turns per member,
 //! model calls at once. Dropping the task (the user pressed Stop) cancels
@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use synapse_core::team_dialogue::{
-    find_member, listening_rules, parse_asks, team_prompt, turn_note, visible_text, Ask, Limits,
+    find_member, parse_asks, team_prompt, turn_note, visible_text, Ask, Limits,
     Member,
 };
 use synapse_llm::{AgentEvent, LlmError, ModelBackend, Role, TurnMessage, TurnRequest, Usage};
@@ -57,6 +57,9 @@ pub struct TeamEnv<B> {
 
 struct Run<B> {
     env: Arc<TeamEnv<B>>,
+    /// The member the user is talking to; the view shows their messages in
+    /// full and everyone else's as collapsed working notes.
+    voice: String,
     tx: mpsc::Sender<TeamEvent>,
     next_stream: AtomicU32,
     calls: Semaphore,
@@ -72,6 +75,11 @@ impl<T> Drop for Guarded<T> {
         }
     }
 }
+
+/// What the lead is told when the meeting goes quiet before they answered.
+const CLOSING_NOTE: &str = "The room has gone quiet. Check what has been done against what the user asked for. \
+If something is still missing or short of what was asked, ping the people who can do it now. \
+Otherwise give the user the final answer: the actual deliverable, complete, saying who contributed.";
 
 const NO_MODEL: &str =
     "This teammate has no model yet. Pick one in Settings → Models, or set their engine in Settings → Agents.";
@@ -106,6 +114,7 @@ pub async fn run_team_turn<B: ModelBackend + 'static>(
         .cloned()
         .ok_or_else(|| LlmError::BadRequest("The team has no members.".into()))?;
     let run = Run {
+        voice: first.id.clone(),
         calls: Semaphore::new(env.limits.parallel_calls.max(1)),
         env,
         tx,
@@ -116,10 +125,10 @@ pub async fn run_team_turn<B: ModelBackend + 'static>(
     let mut turns: HashMap<String, usize> = HashMap::new();
     let mut hops = 0;
     let mut handed_off = false;
-    let mut last_reply = String::new();
     // Who speaks in the next wave, each with what they were pinged about.
     let mut wave: Vec<(Member, Option<String>)> = vec![(first.clone(), None)];
     let mut first_wave = true;
+    let mut closings = 0;
     while !wave.is_empty() {
         let can_hand_off = hops < run.env.limits.hops;
         let snapshot = chat.clone();
@@ -142,9 +151,6 @@ pub async fn run_team_turn<B: ModelBackend + 'static>(
                 Err(e) => format!("(could not answer: {})", e.user_message()),
             };
             let visible = visible_text(&raw);
-            if me.id == first.id {
-                last_reply = visible.clone();
-            }
             let mut shown = visible;
             let asks = if can_hand_off { parse_asks(&raw) } else { Vec::new() };
             for ask in asks.into_iter().take(run.env.limits.pings_per_reply) {
@@ -175,12 +181,16 @@ pub async fn run_team_turn<B: ModelBackend + 'static>(
         }
         first_wave = false;
         wave = next.into_iter().map(|(m, notes)| (m, Some(notes.join("\n\n")))).collect();
-        if hops >= run.env.limits.hops + run.env.members.len() {
+        let capped = hops >= run.env.limits.hops + run.env.members.len();
+        // The room went quiet but the lead did not have the last word: they
+        // check the work against the request, send people back or answer.
+        let lead_last = chat.last().is_some_and(|l| l.who == run.env.lead_id);
+        if (wave.is_empty() || capped) && lead_spoke_first && handed_off && !lead_last && closings < 2 {
+            closings += 1;
+            wave = vec![(first.clone(), Some(CLOSING_NOTE.to_string()))];
+        } else if capped {
             break;
         }
-    }
-    if lead_spoke_first && !handed_off {
-        listen(&run, &first, history, last_reply).await;
     }
     Ok(())
 }
@@ -197,7 +207,7 @@ async fn turn_of<B: ModelBackend + 'static>(
     let (backend, model) = (env.resolve)(&me.id).ok_or_else(|| LlmError::BadRequest(NO_MODEL.into()))?;
     let is_lead = me.id == env.lead_id;
     let system = team_prompt(&env.project, &env.goal, &env.members, me, is_lead, can_hand_off);
-    speak(run, &backend, &model, &system, &view_for(me, chat, note), me, is_lead).await
+    speak(run, &backend, &model, &system, &view_for(me, chat, note), me, is_lead || me.id == run.voice).await
 }
 
 /// The member an ask names, if they may be pinged.
@@ -254,49 +264,6 @@ fn view_for(me: &Member, chat: &[Line], note: Option<&str>) -> Vec<TurnMessage> 
         out.push(TurnMessage::user(note.to_string()));
     }
     merge_user_turns(out)
-}
-
-/// After the lead answers, everyone else who was not asked hears the
-/// conversation and decides for themselves: say hello back, take work that
-/// is theirs, add what was missed, or pass silently (`<pass/>`).
-async fn listen<B: ModelBackend + 'static>(
-    run: &Run<B>,
-    lead: &Member,
-    history: Vec<TurnMessage>,
-    lead_answer: String,
-) {
-    let mut room = as_room(&history, &lead.name);
-    if !lead_answer.trim().is_empty() {
-        room.push(TurnMessage::user(format!("[{} replied]\n{lead_answer}", lead.name)));
-    }
-    let room = merge_user_turns(room);
-    let jobs = run.env.members.iter().filter(|m| m.id != lead.id).map(|m| {
-        let (member, room) = (m.clone(), room.clone());
-        async move {
-            let env = run.env.clone();
-            let Some((backend, model)) = (env.resolve)(&member.id) else { return };
-            let system = format!(
-                "{}{}",
-                team_prompt(&env.project, &env.goal, &env.members, &member, false, false),
-                listening_rules(&member)
-            );
-            // A failed listener stays silent; the lead already answered.
-            let _ = speak(&run, &backend, &model, &system, &room, &member, false).await;
-        }
-    });
-    join_all(jobs).await;
-}
-
-/// The chat as a listener reads it: nobody's earlier lines are theirs, so
-/// the lead's replies become quoted lines instead of assistant turns.
-fn as_room(history: &[TurnMessage], lead: &str) -> Vec<TurnMessage> {
-    history
-        .iter()
-        .map(|m| match m.role {
-            Role::Assistant => TurnMessage::user(format!("[{lead} replied earlier]\n{}", m.text)),
-            _ => m.clone(),
-        })
-        .collect()
 }
 
 /// Consecutive user turns joined into one, for providers that want turns to
@@ -431,11 +398,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_lead_gets_the_last_word_when_a_worker_does_not_ping_back() {
+        let mock = Arc::new(MockLlm::with_outputs(vec![
+            output("<ask agent=\"Mira\">find data</ask>"),
+            output("Here is the data."),
+            output("Final answer from the lead."),
+        ]));
+        let backend = mock.clone();
+        let env = Arc::new(TeamEnv {
+            project: "P".into(),
+            goal: "G".into(),
+            members: vec![member("lead", "Lead", "Chief"), member("a1", "Mira", "Researcher")],
+            lead_id: "lead".into(),
+            resolve: Arc::new(move |_| Some((backend.clone(), "m".into()))),
+            limits: Limits::default(),
+        });
+        let (tx, mut rx) = mpsc::channel(256);
+        run_team_turn(env, "lead", vec![TurnMessage::user("do it")], tx).await.expect("turn");
+        let mut names = Vec::new();
+        while let Some(event) = rx.recv().await {
+            if let TeamEvent::Start { speaker, .. } = event {
+                names.push(speaker);
+            }
+        }
+        assert_eq!(names, ["Lead", "Mira", "Lead"]);
+        assert!(mock.seen_requests()[2].messages.last().unwrap().text.contains("gone quiet"));
+    }
+
+    #[tokio::test]
     async fn two_pinged_members_speak_together_and_can_ping_each_other_after() {
         let mock = Arc::new(MockLlm::with_outputs(vec![
             output("<ask agent=\"Mira\">find data</ask><ask agent=\"Leo\">find risks</ask>"),
             output("Data found."),
             output("Risks found."),
+            output("Summary for the user."),
         ]));
         let backend = mock.clone();
         let env = Arc::new(TeamEnv {
@@ -455,37 +451,12 @@ mod tests {
             }
         }
         assert_eq!(names[0], "Lead");
-        names[1..].sort();
-        assert_eq!(names[1..], ["Leo", "Mira"]);
+        names[1..3].sort();
+        assert_eq!(names[1..3], ["Leo", "Mira"]);
+        assert_eq!(names[3], "Lead");
         // Both saw the same chat when they began.
         let seen = mock.seen_requests();
         assert_eq!(seen[1].messages.len(), seen[2].messages.len());
-    }
-
-    #[tokio::test]
-    async fn a_greeting_is_answered_by_the_lead_and_greeted_back_by_the_others() {
-        let mock = Arc::new(MockLlm::with_outputs(vec![output("Hi!"), output("Hey, Mira here.")]));
-        let backend = mock.clone();
-        let env = Arc::new(TeamEnv {
-            project: "P".into(),
-            goal: String::new(),
-            members: vec![member("lead", "Lead", ""), member("a1", "Mira", "Researcher")],
-            lead_id: "lead".into(),
-            resolve: Arc::new(move |_| Some((backend.clone(), "m".into()))),
-            limits: Limits::default(),
-        });
-        let (tx, mut rx) = mpsc::channel(64);
-        run_team_turn(env, "lead", vec![TurnMessage::user("hi everyone")], tx).await.expect("turn");
-        let mut names = Vec::new();
-        while let Some(event) = rx.recv().await {
-            if let TeamEvent::Start { speaker, .. } = event {
-                names.push(speaker);
-            }
-        }
-        assert_eq!(names, ["Lead", "Mira"]);
-        let seen = mock.seen_requests();
-        assert!(seen[1].system.clone().unwrap().contains("<pass/>"));
-        assert!(seen[1].messages.last().unwrap().text.contains("[Lead replied]\nHi!"));
     }
 
     #[tokio::test]

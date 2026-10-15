@@ -34,12 +34,14 @@ pub(crate) enum EngineTarget {
     ProviderDefault(String),
     /// A CLI's default model (Models page): straight to its models.
     CliDefault(String),
+    /// The small model for quick jobs (Models page): a provider and model.
+    Small,
 }
 
 impl EngineTarget {
     /// Sets a default on the Models page instead of choosing an agent's engine.
     fn is_default_setting(&self) -> bool {
-        matches!(self, Self::ProviderDefault(_) | Self::CliDefault(_))
+        matches!(self, Self::ProviderDefault(_) | Self::CliDefault(_) | Self::Small)
     }
 }
 
@@ -90,6 +92,7 @@ impl ShellView {
             (EngineTarget::CliDefault(id), Some(Engine::Cli { model, .. })) => {
                 set_cli_default(store, id, model.as_deref())
             }
+            (EngineTarget::Small, engine) => crate::small_model::set(store, engine.as_ref()),
             _ => Ok(()),
         });
         self.reload_models_page(cx);

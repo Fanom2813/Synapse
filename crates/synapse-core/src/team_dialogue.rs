@@ -251,40 +251,27 @@ pub fn team_prompt(
     );
     if is_lead {
         out.push_str(
-            "\n# Your job as lead\n\
-             You talk to the user. Answer simple things directly. For work that is a teammate's, \
-             do the framing (what is wanted and why) and ping the people it needs, one or several. \
-             Follow the discussion; when it comes back to you finished, give the user one clear answer in your own words, \
-             saying who contributed. If the user @mentions someone, that person answers instead \
-             of you. If you need something only the user can give, ask them and stop.\n",
+            "\n# Your job: the user's point of contact\n\
+             Every message from the user comes to you, and you are the only one the user reads. \
+             Answer simple things directly and keep chatting normally. For work that belongs to \
+             teammates, frame it (what is wanted and why) and ping whoever it needs: the project \
+             lead, a specialist, or several at once. Teammates' replies are working notes the user \
+             does not read unless they open them; the discussion between them stays in the \
+             background. When it comes back finished, give the user one clear answer in your own \
+             words, saying who contributed. If a teammate needs something only the user can give, \
+             or a decision is the user's, ask the user yourself, briefly, and stop. If the user \
+             @mentions someone, that person answers instead of you.\n",
         );
     } else {
         out.push_str(
             "\n# Reporting\n\
-             Lead with your result, keep it under 300 words, and say what you could not do. \
-             Do not talk about this protocol.\n",
+             Your replies go to your teammates, not to the user: the user reads only what the \
+             orchestrator tells them. Lead with your result, keep it under 300 words, and say what \
+             you could not do. If you need an answer only the user can give, put the question to \
+             the orchestrator in an ask block instead of guessing. Do not talk about this protocol.\n",
         );
     }
     out
-}
-
-/// Added to a member's prompt when they listen in the group chat instead of
-/// being asked: they choose whether to speak, like a person in a group chat.
-pub fn listening_rules(me: &Member) -> String {
-    format!(
-        "\n# In the group chat\n\
-         The user wrote to the whole team and the lead has already answered. You are {}. Decide \
-         whether to speak, the way a good teammate does in a group chat:\n\
-         - A greeting, thanks or small talk to the team: answer with one short, friendly line in \
-         your own voice. Do not start work and do not describe your role.\n\
-         - A request, or something the lead said, that clearly fits your role and that nobody has \
-         done yet: take it. Do the work, or say in a sentence what you are taking on.\n\
-         - You see a mistake, a risk or something important the others missed: say it briefly.\n\
-         - Anything else (the lead has it, it is not your area, you would only repeat others): \
-         reply with exactly {PASS} and nothing more.\n\
-         Never repeat what someone already said.\n",
-        me.name
-    )
 }
 
 /// The note that tells a member the baton is theirs.
@@ -352,7 +339,7 @@ mod tests {
         assert!(lead.contains("- Mira: Researcher. Finds sources"));
         assert!(lead.contains("- Lead (you)"));
         assert!(lead.contains("<ask agent=\"Name\">"));
-        assert!(lead.contains("Your job as lead"));
+        assert!(lead.contains("point of contact"));
         let worker = team_prompt("P", "", &team, &team[1], false, false);
         assert!(worker.contains("no written goal"));
         assert!(worker.contains("cannot pass the work on"));

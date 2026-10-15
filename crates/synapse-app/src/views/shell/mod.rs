@@ -93,6 +93,12 @@ impl ShellView {
         cx.subscribe(&view.chat, |this, _, event: &crate::chat_view::GoalWritten, cx| {
             if this.shell.open_project_id.as_deref() == Some(event.project_id.as_str()) {
                 this.goal = event.goal.clone();
+                if let Some(name) = &event.name {
+                    if let Some(p) = this.shell.projects.iter_mut().find(|p| p.id == event.project_id) {
+                        p.name = name.clone();
+                    }
+                    this.shell.title.project_name = Some(name.clone());
+                }
                 this.sync_chat_context(cx);
                 cx.notify();
             }

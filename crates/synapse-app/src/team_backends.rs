@@ -16,8 +16,23 @@ use synapse_llm::GenaiBackend;
 
 const KEY_CACHE_TTL: Duration = Duration::from_secs(60);
 
-/// The lead's agent id (the starter team's chief of staff).
-const LEAD_ID: &str = "agent-lead";
+/// The orchestrator's id: the app's own built-in agent, not a stored one.
+pub const ORCHESTRATOR_ID: &str = "orchestrator";
+const ORCHESTRATOR_NAME: &str = "Synapse";
+
+/// The one the user talks to in every project. It answers simple things
+/// itself and hands the rest to the project's team, then brings the result
+/// back, so the conversation stays with the user.
+fn orchestrator() -> Member {
+    Member {
+        id: ORCHESTRATOR_ID.into(),
+        name: ORCHESTRATOR_NAME.into(),
+        role: "Orchestrator".into(),
+        brief: "The user's point of contact. Routes each request to the right teammate and brings the answer back.".into(),
+        instructions: String::new(),
+        avatar: String::new(),
+    }
+}
 
 /// The team for `project_id`, or `None` when it has no members yet.
 pub fn team_env(
@@ -26,7 +41,7 @@ pub fn team_env(
     project_name: &str,
     goal: &str,
 ) -> Option<Arc<TeamEnv<GenaiBackend>>> {
-    let members: Vec<Member> = crate::team_setup::project_team(store, project_id)
+    let team: Vec<Member> = crate::team_setup::project_team(store, project_id)
         .into_iter()
         .map(|a| Member {
             brief: brief_of(&a.role, &a.instructions),
@@ -37,13 +52,16 @@ pub fn team_env(
             avatar: a.avatar,
         })
         .collect();
-    let lead_id = members.iter().find(|m| m.id == LEAD_ID).or(members.first())?.id.clone();
+    if team.is_empty() {
+        return None;
+    }
+    let members: Vec<Member> = std::iter::once(orchestrator()).chain(team).collect();
     let resolve: Resolver<GenaiBackend> = Arc::new(resolve_member);
     Some(Arc::new(TeamEnv {
         project: project_name.to_string(),
         goal: goal.to_string(),
         members,
-        lead_id,
+        lead_id: ORCHESTRATOR_ID.to_string(),
         resolve,
         limits: Limits::default(),
     }))

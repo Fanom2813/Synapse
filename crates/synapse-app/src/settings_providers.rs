@@ -3,7 +3,7 @@
 //! UI-toolkit free so it is unit testable: searchable catalog list, enable a
 //! provider, enter/remove a key (stored only in the [`SecretStore`]), test the
 //! key against the provider's own host, and default models per role
-//! (lead / member / selector). Persisted in the `settings` table; the DB
+//! (lead / member / selector / small). Persisted in the `settings` table; the DB
 //! never holds a secret value.
 
 use std::collections::HashMap;
@@ -46,6 +46,8 @@ pub enum ModelRole {
     Lead,
     Member,
     Selector,
+    /// Quick, cheap jobs: naming a project, summarising a goal.
+    Small,
 }
 
 impl ModelRole {
@@ -54,11 +56,12 @@ impl ModelRole {
             Self::Lead => "lead",
             Self::Member => "member",
             Self::Selector => "selector",
+            Self::Small => "small",
         }
     }
 
-    pub fn all() -> [Self; 3] {
-        [Self::Lead, Self::Member, Self::Selector]
+    pub fn all() -> [Self; 4] {
+        [Self::Lead, Self::Member, Self::Selector, Self::Small]
     }
 }
 
@@ -69,8 +72,9 @@ impl std::str::FromStr for ModelRole {
             "lead" => Ok(Self::Lead),
             "member" => Ok(Self::Member),
             "selector" => Ok(Self::Selector),
+            "small" => Ok(Self::Small),
             other => Err(ProvidersError::Invalid(format!(
-                "unknown role '{other}', expected lead|member|selector"
+                "unknown role '{other}', expected lead|member|selector|small"
             ))),
         }
     }

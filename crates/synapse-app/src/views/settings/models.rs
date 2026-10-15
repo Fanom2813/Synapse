@@ -74,13 +74,14 @@ impl ShellView {
     pub(crate) fn refresh_chat_backend(&mut self, cx: &mut Context<Self>) {
         crate::team_backends::forget_keys();
         cx.spawn(async move |this, cx| {
-            let (backend, model, persist) = cx
+            let ((backend, model, persist), small) = cx
                 .background_executor()
-                .spawn(async { crate::window::chat_config() })
+                .spawn(async { (crate::window::chat_config(), crate::window::small_config()) })
                 .await;
             let _ = this.update(cx, |this, cx| {
                 this.chat.update(cx, |chat, cx| {
                     chat.reconfigure(backend, model, persist);
+                    chat.set_small(small);
                     cx.notify();
                 });
             });
@@ -289,6 +290,32 @@ pub(super) fn page(view: &ShellView, cx: &mut Context<ShellView>) -> AnyElement 
         );
     }
 
+    let small = crate::window::open_store()
+        .and_then(|s| crate::small_model::get(&s))
+        .map_or_else(|| "Not set · the Lead model does these jobs".to_string(), |(p, m)| format!("{m} · {p}"));
+    let small_row = h_flex()
+        .id("small-model-row")
+        .items_center()
+        .gap_3()
+        .px_4()
+        .py_3()
+        .cursor_pointer()
+        .hover(move |r| r.bg(hover))
+        .on_click(cx.listener(|this, _, window, cx| {
+            this.open_engine_dialog(EngineTarget::Small, Vec::new(), window, cx)
+        }))
+        .child(
+            v_flex()
+                .flex_1()
+                .child(div().typeset(TextRole::Label, cx).child("Small model"))
+                .child(
+                    div()
+                        .typeset(TextRole::Caption, cx)
+                        .text_color(t.colors.muted_foreground)
+                        .child(small),
+                ),
+        );
+
     let mut clis = card(&t);
     match &page.clis {
         None => {
@@ -382,6 +409,9 @@ pub(super) fn page(view: &ShellView, cx: &mut Context<ShellView>) -> AnyElement 
                 .child(note)
         }))
         .child(providers)
+        .child(heading("SMALL MODEL", cx))
+        .child(card(&t).child(small_row))
+        .child(caption("A fast, cheap model for quick jobs like naming a new project from its first message.", cx))
         .child(heading("CODING CLIS", cx))
         .child(clis)
         .child(caption("Click a provider or CLI to choose its default model. Agents follow it unless they have a model of their own under Settings → Agents.", cx))

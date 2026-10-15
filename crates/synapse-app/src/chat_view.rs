@@ -722,6 +722,8 @@ use gpui_kit::component::button::ButtonVariants as _;
 use gpui_kit::component::input::{InputEvent, Textarea, TextareaState};
 use gpui_kit::component::message_scroller::{MessageScroller, MessageScrollerState};
 use gpui_kit::component::text::TextView;
+use gpui_kit::component::Sizable as _;
+use gpui_kit::InteractiveElement as _;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, Disableable as _};
 use gpui_kit::{
     div, px, App, AppContext as _, Context, Entity, EventEmitter, IntoElement, ParentElement as _,
@@ -739,10 +741,12 @@ async fn run_turn<B: ModelBackend + 'static>(
         .map_err(|e| LlmError::Stream(e.to_string()))?
 }
 
-/// A model wrote the goal of this project from its first prompt.
+/// A model wrote the goal of this project from its first prompt, and named
+/// it when it still had the placeholder name.
 pub struct GoalWritten {
     pub project_id: String,
     pub goal: String,
+    pub name: Option<String>,
 }
 
 /// What the view needs to price and persist a finished turn. All fields are
@@ -776,6 +780,8 @@ pub struct ChatView<B> {
     backend: std::sync::Arc<B>,
     model: String,
     persist: ChatPersist,
+    /// The small model for quick jobs (Models page); the Lead model when unset.
+    small: Option<(std::sync::Arc<B>, String)>,
     /// Project still without a goal: the next prompt is summarised into one.
     goal_for: Option<String>,
     /// System prompt every turn starts with (project, goal, team).
@@ -783,6 +789,8 @@ pub struct ChatView<B> {
     /// The open project's team: when set, messages go to the lead (or the
     /// member the user @mentions) and teammates answer in the chat.
     team: Option<std::sync::Arc<crate::team_run::TeamEnv<B>>>,
+    /// Teammates' folded working notes (by message id) the user opened.
+    opened: std::collections::HashSet<usize>,
     _composer_sub: Subscription,
 }
 
@@ -813,11 +821,18 @@ where
             backend,
             model: model.into(),
             persist: ChatPersist::default(),
+            small: None,
             goal_for: None,
             system: None,
             team: None,
+            opened: std::collections::HashSet::new(),
             _composer_sub: composer_sub,
         }
+    }
+
+    /// Use `small` for quick jobs such as naming a project.
+    pub fn set_small(&mut self, small: Option<(std::sync::Arc<B>, String)>) {
+        self.small = small;
     }
 
     /// Switch to a freshly built backend (key, model or provider changed).
@@ -898,25 +913,55 @@ where
         }
     }
 
+    /// Open or fold a teammate's working note.
+    fn toggle_note(&mut self, id: usize, cx: &mut Context<Self>) {
+        if !self.opened.remove(&id) {
+            self.opened.insert(id);
+        }
+        let count = self.state.item_count();
+        self.scroller.update(cx, |s, cx| s.reset(count, cx));
+        cx.notify();
+    }
+
     /// Have a model write the project's goal from `text` when it has none.
     fn start_goal_summary(&mut self, text: &str, cx: &mut Context<Self>) {
         let Some(project_id) = self.goal_for.take() else {
             return;
         };
-        let (backend, store) = (self.backend.clone(), self.persist.store.clone());
-        let req = crate::project_goal::request(&self.model, text);
+        let (backend, model) = self
+            .small
+            .clone()
+            .unwrap_or_else(|| (self.backend.clone(), self.model.clone()));
+        let store = self.persist.store.clone();
+        let req = crate::project_goal::request(&model, text);
         cx.spawn(async move |this, cx| {
-            let Some(goal) = run_turn(backend, req)
-                .await
-                .ok()
-                .and_then(crate::project_goal::from_events)
-            else {
+            let events = match run_turn(backend, req).await {
+                Ok(events) => events,
+                Err(e) => {
+                    eprintln!("project naming failed: {e}");
+                    return;
+                }
+            };
+            let dump = format!("{events:?}");
+            let Some(drafted) = crate::project_goal::from_events(events) else {
+                eprintln!("project naming: the model returned no name: {dump}");
                 return;
             };
-            let saved = store.is_some_and(|s| s.set_project_goal(&project_id, &goal).is_ok());
-            if saved {
-                _ = this.update(cx, |_, cx| cx.emit(GoalWritten { project_id, goal }));
+            let Some(store) = store else {
+                return;
+            };
+            if store.set_project_goal(&project_id, &drafted.goal).is_err() {
+                return;
             }
+            let untitled = store
+                .get_project(&project_id)
+                .is_ok_and(|p| p.name == crate::project_setup::UNTITLED);
+            let name = untitled
+                .then(|| store.rename_project(&project_id, &drafted.name).ok())
+                .flatten()
+                .map(|p| p.name);
+            let goal = drafted.goal;
+            _ = this.update(cx, |_, cx| cx.emit(GoalWritten { project_id, goal, name }));
         })
         .detach();
     }
@@ -1167,6 +1212,17 @@ where
                     && synapse_core::team_dialogue::visible_text(&m.body).is_empty()
             })
             .collect();
+        // Teammates' turns fold into one line; (message id, open) per row.
+        let folded: Vec<Option<(usize, bool)>> = self
+            .state
+            .messages()
+            .iter()
+            .map(|m| {
+                (m.role == ChatRole::Teammate).then(|| (m.id, self.opened.contains(&m.id)))
+            })
+            .collect();
+        let streaming: Vec<bool> = self.state.messages().iter().map(|m| m.streaming).collect();
+        let view = cx.entity().downgrade();
         let send_label = self.state.send_label().to_string();
         let running = self.state.is_running();
         let footers: Vec<Option<String>> = self
@@ -1204,9 +1260,32 @@ where
                         .into_any_element();
                 }
                 let pinged = ping_rows.get(ix).cloned().unwrap_or_default();
+                if let Some((id, open)) = folded.get(ix).copied().flatten() {
+                    if body.is_empty() && !streaming.get(ix).copied().unwrap_or(false) {
+                        return div().into_any_element();
+                    }
+                    let view = view.clone();
+                    let note = crate::work_note::WorkNote {
+                        index: ix,
+                        avatar: avatars.get(ix).cloned().flatten().unwrap_or_default(),
+                        author,
+                        working: streaming.get(ix).copied().unwrap_or(false),
+                        body,
+                        open,
+                    };
+                    return v_flex()
+                        .w_full()
+                        .px_4()
+                        .py_0p5()
+                        .child(note.render(app, move |app| {
+                            _ = view.update(app, |this, cx| this.toggle_note(id, cx));
+                        }))
+                        .into_any_element();
+                }
                 if body.is_empty() && pinged.is_empty() && !waiting.get(ix).copied().unwrap_or(false) {
                     return div().into_any_element();
                 }
+                let plain = body.clone();
                 let text = TextView::markdown(format!("chat-msg-{ix}"), body)
                     .stream_fade(true)
                     .code_block_actions(|_block, _, _| div());
@@ -1252,19 +1331,32 @@ where
                 } else {
                     content.child(crate::ping_row::ping_row(ix, &sender, pinged))
                 };
-                let content = match footers.get(ix).cloned().flatten() {
-                    Some(footer) => content.child(
-                        div()
-                            .typeset(TextRole::Caption, app)
-                            .figures()
-                            .text_color(muted)
-                            .child(footer),
-                    ),
-                    None => content,
+                // The copy button shows while the pointer is over the message.
+                let group = format!("chat-row-{ix}");
+                let copy = Button::new(("chat-copy", ix))
+                    .ghost()
+                    .small()
+                    .icon(crate::icons::COPY)
+                    .tooltip("Copy")
+                    .on_click(move |_, _, app: &mut App| {
+                        app.write_to_clipboard(gpui_kit::ClipboardItem::new_string(plain.clone()));
+                    });
+                let mut foot = h_flex().gap_2().items_center();
+                if let Some(footer) = footers.get(ix).cloned().flatten() {
+                    foot = foot.child(
+                        div().typeset(TextRole::Caption, app).figures().text_color(muted).child(footer),
+                    );
+                }
+                let content = if waiting.get(ix).copied().unwrap_or(false) {
+                    content
+                } else {
+                    content.child(
+                        foot.child(div().invisible().group_hover(group.clone(), |s| s.visible()).child(copy)),
+                    )
                 };
                 // Column + cross-axis alignment keeps a user turn on the right
                 // however the row was measured.
-                let row = v_flex().w_full().py_2().px_4();
+                let row = v_flex().w_full().py_2().px_4().group(group);
                 if is_user {
                     row.items_end().child(content).into_any_element()
                 } else {

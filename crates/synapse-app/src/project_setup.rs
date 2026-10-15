@@ -1,5 +1,5 @@
 //! Creating a project: the store rows plus the sidebar entry. Toolkit-free;
-//! the "New project" popup and the sidebar call these.
+//! the sidebar's New project button calls these.
 
 use crate::shell::ShellProject;
 use synapse_store::{new_id, NewProject, Store};
@@ -10,12 +10,12 @@ pub struct CreatedProject {
     pub conversation_id: String,
 }
 
-/// Create a project named `name` with an empty room conversation.
-pub fn create_project(store: &Store, name: &str) -> Result<CreatedProject, String> {
-    let name = name.trim();
-    if name.is_empty() {
-        return Err("Give the project a name.".into());
-    }
+/// The name a project has until a model names it from the first prompt.
+pub const UNTITLED: &str = "New project";
+
+/// Create an untitled project with an empty room conversation.
+pub fn create_project(store: &Store) -> Result<CreatedProject, String> {
+    let name = UNTITLED;
     let id = new_id("project");
     store
         .create_project(&NewProject {
@@ -78,9 +78,8 @@ mod tests {
     #[test]
     fn a_new_project_is_stored_with_an_empty_room() {
         let store = Store::open_in_memory().unwrap();
-        assert!(create_project(&store, "  ").is_err());
-        let made = create_project(&store, " Market study ").unwrap();
-        assert_eq!(made.project.name, "Market study");
+        let made = create_project(&store).unwrap();
+        assert_eq!(made.project.name, super::UNTITLED);
         assert_eq!(store.list_projects(false).unwrap().len(), 1);
         assert_eq!(
             room_conversation(&store, &made.project.id, "x"),
